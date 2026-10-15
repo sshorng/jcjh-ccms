@@ -11,7 +11,7 @@
   <meta name="description" content="建成國中輔導個案管理系統 - 優先關懷個案名單與晤談紀錄管理">
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@300;400;500;700&display=swap" rel="stylesheet">
   <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" rel="stylesheet">
-  <link rel="stylesheet" href="ccms-style.css?v=20261015e">
+   <link rel="stylesheet" href="ccms-style.css?v=20261015f">
 </head>
 
 <body>
@@ -1302,18 +1302,16 @@
                   style="margin-top: 8px; display: flex; flex-wrap: wrap; gap: 6px; align-items: center;">
                   <span style="color: var(--text-mut); font-size: 13px;">已選：</span>
                   <span v-for="(name, idx) in caseForm.counselorArr" :key="name"
-                    :class="['badge', idx === 0 ? 'badge-primary' : 'badge-secondary']"
+                     :class="['badge', idx === 0 ? 'badge-main' : 'badge-sub']"
                     style="font-size: 13px; padding: 4px 8px;">
                     {{ name }}【{{ idx === 0 ? '主' : '輔' }}】
-                    <a v-if="idx !== 0" href="#" @click.prevent="setPrimaryCounselor(name)" title="改為主要專輔"
-                      style="margin-left: 4px; text-decoration: underline;">設為主</a>
-                    <a href="#" @click.prevent="removeCounselor(name)" title="移除此專輔"
-                      style="margin-left: 4px; text-decoration: underline;">×</a>
-                  </span>
+                     <a href="#" @click.prevent="removeCounselor(name)" title="移除此專輔"
+                       style="margin-left: 4px; text-decoration: underline; color: inherit;">×</a>
+                   </span>
                 </div>
                 <div v-if="caseForm.counselorArr && caseForm.counselorArr.length > 1" class="meta-hint"
                   style="margin-top: 6px; color: var(--acc); font-size: 13px; font-weight: bold;">
-                  <i class="fas fa-info-circle"></i> 正式編號以主要專輔（{{ caseForm.counselorArr[0] }}）的教師編碼產生。
+                   <i class="fas fa-info-circle"></i> 正式編號以主要專輔（{{ caseForm.counselorArr[0] }}）的教師編碼產生；要換主請取消勾選後依序重勾。
                 </div>
               </div>
               <div class="fg"><label>特教個管老師</label><input v-model="caseForm.specialEduTeacher" placeholder="直接輸入特教個管姓名">
@@ -1582,6 +1580,6 @@
   <script defer src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
   <script defer src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
   <script defer src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.3.0/exceljs.min.js"></script>
-  <script src="ccms-app.js?v=20261015e"></script>
+   <script src="ccms-app.js?v=20261015f"></script>
 
 </html>
