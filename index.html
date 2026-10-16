@@ -11,7 +11,7 @@
   <meta name="description" content="國中輔導個案管理系統 - 優先關懷個案名單與晤談紀錄管理">
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@300;400;500;700&display=swap" rel="stylesheet">
   <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" rel="stylesheet">
-   <link rel="stylesheet" href="ccms-style.css?v=20261015k">
+   <link rel="stylesheet" href="ccms-style.css?v=20261015l">
 </head>
 
 <body>
@@ -797,19 +797,17 @@
               <!-- 校名設定：精簡單列 -->
               <div class="fade-in"
                 style="display:flex; gap:10px; align-items:flex-end; flex-wrap:wrap; padding-bottom:16px; margin-bottom:18px; border-bottom:1px solid var(--bd);">
-                <div style="flex:1; min-width:220px;">
-                  <label style="display:block; font-size:12px; color:var(--tx2); margin-bottom:5px;">
-                    學校全名 <span style="color:var(--err)">*</span></label>
-                  <input v-model="schoolForm.schoolName" placeholder="例：臺北市立建成國民中學" style="padding:8px 12px;">
+                <div class="fg" style="flex:1; min-width:220px;">
+                  <label>學校全名 <span style="color:var(--err)">*</span></label>
+                  <input v-model="schoolForm.schoolName" placeholder="例：臺北市立建成國民中學">
                 </div>
-                <div style="flex:1; min-width:160px;">
-                  <label style="display:block; font-size:12px; color:var(--tx2); margin-bottom:5px;">學校簡稱</label>
-                  <input v-model="schoolForm.schoolShort" placeholder="例：建成國中" style="padding:8px 12px;">
+                <div class="fg" style="flex:1; min-width:160px;">
+                  <label>學校簡稱</label>
+                  <input v-model="schoolForm.schoolShort" placeholder="例：建成國中">
                 </div>
-                <div style="flex:0 1 120px;">
-                  <label style="display:block; font-size:12px; color:var(--tx2); margin-bottom:5px;">英文簡稱</label>
-                  <input v-model="schoolForm.schoolAbbr" placeholder="JCJH" maxlength="12"
-                    style="padding:8px 12px; text-transform:uppercase;">
+                <div class="fg" style="flex:0 1 120px;">
+                  <label>英文簡稱</label>
+                  <input v-model="schoolForm.schoolAbbr" placeholder="JCJH" maxlength="12" style="text-transform:uppercase;">
                 </div>
                 <button class="btn btn-primary btn-sm" @click="saveSchoolInfo()" :disabled="loading"
                   style="height:37px; padding:0 16px;">
@@ -1252,7 +1250,7 @@
               <label style="display:block; font-size:12px; color:var(--tx2); margin-bottom:5px;">快取分享網址（提供給其他學校）</label>
               <div style="display:flex; gap:8px;">
                 <input :value="shareLinkPreview" readonly
-                  style="flex:1; font-size:11px; font-family:monospace; padding:8px;">
+                  style="flex:1; font-size:11px; font-family:monospace; padding:8px 12px; border-radius:var(--r2); border:1px solid var(--bd); background:var(--sf2); color:var(--tx); outline:none;">
                 <button class="btn btn-secondary btn-sm" @click="copyText(shareLinkPreview, '分享網址已複製')">
                   <i class="fas fa-copy"></i> 複製
                 </button>
@@ -1707,6 +1705,6 @@
   <script defer src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
   <script defer src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
   <script defer src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.3.0/exceljs.min.js"></script>
-   <script src="ccms-app.js?v=20261015k"></script>
+   <script src="ccms-app.js?v=20261015l"></script>
 
 </html>
