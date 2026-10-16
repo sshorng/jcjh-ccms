@@ -444,6 +444,32 @@ body {
   overflow-y: auto;
 }
 
+/* 內容區與 Modal 內的一般連結沿用主題色 */
+.modal-body a,
+.report-section a,
+td a,
+p a,
+li a,
+h3 a,
+h4 a {
+  color: var(--pri);
+  text-decoration: none;
+  border-bottom: 1px solid rgba(var(--p-alpha), .35);
+  transition: color .2s, border-color .2s;
+  font-weight: 500;
+}
+
+.modal-body a:hover,
+.report-section a:hover,
+td a:hover,
+p a:hover,
+li a:hover,
+h3 a:hover,
+h4 a:hover {
+  color: var(--acc);
+  border-bottom-color: var(--acc);
+}
+
 .sidebar nav a {
   display: flex;
   align-items: center;
