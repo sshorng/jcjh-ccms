@@ -2220,12 +2220,14 @@ createApp({
       document.title = this.systemTitle;
     },
     // 開啟雲端試算表：網址由後端推導，前端不保存任何硬編碼的資料庫位址
-    async openSpreadsheet() {
-      // 🛡️ 必須在使用者點擊的同步堆疊內開啟分頁，否則會被瀏覽器當成彈出視窗攔截
-      const win = window.open('', '_blank');
+    // 若尚未取得網址，先向後端索取再以原生連結開啟，全程不使用 window.open
+    async openSpreadsheetFallback() {
       if (this.sheetUrl) {
-        if (win) win.location.href = this.sheetUrl;
-        else this.showToast('瀏覽器擋住了新分頁，請允許本站開啟彈出視窗', 'warning');
+        const a = document.createElement('a');
+        a.href = this.sheetUrl;
+        a.target = '_blank';
+        a.rel = 'noopener noreferrer';
+        a.click();
         return;
       }
       this.loadingMsg = '正在取得資料庫網址...';
@@ -2234,16 +2236,15 @@ createApp({
       await this.fetchSchoolInfo(true);
       this.loading = false;
       if (this.sheetUrl) {
-        if (win) win.location.href = this.sheetUrl;
-        else this.showToast('瀏覽器擋住了新分頁，請允許本站開啟彈出視窗', 'warning');
+        const a = document.createElement('a');
+        a.href = this.sheetUrl;
+        a.target = '_blank';
+        a.rel = 'noopener noreferrer';
+        a.click();
+      } else if (this.backendOutdated) {
+        this.showToast('後端尚未更新，請將新版 Code.gs 貼到 Apps Script 並重新部署', 'error');
       } else {
-        // 取得失敗則關掉空白分頁，避免留下多餘視窗
-        if (win) win.close();
-        if (this.backendOutdated) {
-          this.showToast('後端尚未更新，請將新版 Code.gs 貼到 Apps Script 並重新部署', 'error');
-        } else {
-          this.showToast('無法取得試算表網址，請確認後端已部署且連線正常', 'error');
-        }
+        this.showToast('無法取得試算表網址，請確認後端已部署且連線正常', 'error');
       }
     },
     // 產生快取分享網址（帶入 GAS 網址、校名與版本參數）
