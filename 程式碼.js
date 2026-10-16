@@ -434,7 +434,21 @@ function getSchoolProfile() {
   const name = getSetting('SCHOOL_NAME') || '臺北市立建成國民中學';
   const short = getSetting('SCHOOL_SHORT') || '建成國中';
   const abbr = getSetting('SCHOOL_ABBR') || 'JCJH';
-  return { success: true, schoolName: name, schoolShort: short, schoolAbbr: abbr, version: APP_VERSION };
+  // 試算表 ID 由後端推導，前端不保存任何硬編碼的資料庫網址
+  let sheetUrl = '';
+  try {
+    sheetUrl = getSpreadsheet().getUrl();
+  } catch (e) {
+    sheetUrl = '';
+  }
+  return {
+    success: true,
+    schoolName: name,
+    schoolShort: short,
+    schoolAbbr: abbr,
+    sheetUrl: sheetUrl,
+    version: APP_VERSION
+  };
 }
 
 /**

@@ -68,6 +68,7 @@ createApp({
       testing: false,
       testResult: null,
       serverVersion: '',
+      sheetUrl: '',
       needsSetup: false,
       shareLinkPreview: '',
       schoolForm: { schoolName: DEFAULT_SCHOOL_NAME, schoolShort: DEFAULT_SCHOOL_SHORT, schoolAbbr: DEFAULT_SCHOOL_ABBR },
@@ -2198,6 +2199,22 @@ createApp({
       }
       document.title = this.systemTitle;
     },
+    // 開啟雲端試算表：網址由後端推導，前端不保存任何硬編碼的資料庫位址
+    async openSpreadsheet() {
+      if (this.sheetUrl) {
+        window.open(this.sheetUrl, '_blank');
+        return;
+      }
+      this.loadingMsg = '正在取得資料庫網址...';
+      this.loading = true;
+      await this.fetchSchoolInfo(true);
+      this.loading = false;
+      if (this.sheetUrl) {
+        window.open(this.sheetUrl, '_blank');
+      } else {
+        this.showToast('無法取得試算表網址，請確認後端已部署且連線正常', 'error');
+      }
+    },
     // 產生快取分享網址（帶入 GAS 網址、校名與版本參數）
     generateShareLink() {
       if (!this.gasUrl) { this.showToast('請先設定 GAS 網址', 'error'); return; }
@@ -2318,6 +2335,7 @@ createApp({
             localStorage.setItem('cms_school_abbr', data.schoolAbbr);
           }
           if (data.version) this.serverVersion = data.version;
+          if (data.sheetUrl) this.sheetUrl = data.sheetUrl;
           this.needsSetup = false;
         }
       } catch (e) {

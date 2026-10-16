@@ -11,7 +11,7 @@
   <meta name="description" content="國中輔導個案管理系統 - 優先關懷個案名單與晤談紀錄管理">
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@300;400;500;700&display=swap" rel="stylesheet">
   <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" rel="stylesheet">
-   <link rel="stylesheet" href="ccms-style.css?v=20261015l">
+   <link rel="stylesheet" href="ccms-style.css?v=20261015m">
 </head>
 
 <body>
@@ -775,10 +775,9 @@
         <section v-if="page==='settings' && isAdmin">
           <div class="page-header" style="justify-content: space-between;">
             <h1><i class="fas fa-gear"></i> 系統配置與工具</h1>
-            <a href="https://docs.google.com/spreadsheets/d/1Y2fpaQ8shsR9ylZXiQmbkjFDg53FcfWCafsW3V2gbEc/edit?usp=sharing"
-              target="_blank" class="btn btn-secondary btn-sm">
+            <button class="btn btn-secondary btn-sm" @click="openSpreadsheet()" :disabled="loading">
               <i class="fas fa-table"></i> 開啟雲端試算表
-            </a>
+            </button>
           </div>
 
           <!-- 分頁籤 -->
@@ -1705,6 +1704,6 @@
   <script defer src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
   <script defer src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
   <script defer src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.3.0/exceljs.min.js"></script>
-   <script src="ccms-app.js?v=20261015l"></script>
+   <script src="ccms-app.js?v=20261015m"></script>
 
 </html>
