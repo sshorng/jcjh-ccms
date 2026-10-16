@@ -927,10 +927,14 @@ function handleLogin(data) {
   // 生成 Session Token
   const token = createSession(userData);
 
+  // 🛡️ 仍使用預設密碼時，前端將強制擋住操作並要求先改密
+  const usingDefaultPwd = (hashedPwd === hashPassword('admin123'));
+
   return {
     success: true,
     token: token,
     user: userData,
+    mustChangePassword: usingDefaultPwd,
     schoolName: getSetting('SCHOOL_NAME') || '臺北市立建成國民中學',
     schoolShort: getSetting('SCHOOL_SHORT') || '建成國中',
     schoolAbbr: getSetting('SCHOOL_ABBR') || 'JCJH'
@@ -3201,7 +3205,8 @@ function uploadRecordImage(data) {
     const blob = Utilities.newBlob(decodedFile, data.mimeType, data.fileName);
     const file = folder.createFile(blob);
     
-    // 設定為知道連結的人可以查看，以便前端預覽和匯出
+    // 設定為知道連結的人可以查看，供前端預覽與匯出使用
+    // ⚠️ 網頁顯示縮圖與開啟附件皆依賴此公開連結，改為 PRIVATE 會導致附件無法顯示
     file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
     
     return {
@@ -3226,6 +3231,57 @@ function handleDeleteAttachment(data) {
   } catch(e) {
     return { success: false, error: '刪除附件失敗: ' + e.message };
   }
+}
+
+/**
+ * 批次讀取附件內容（供 Word 匯出內嵌附件本體使用）
+ * 權限：由 Session 攔截器保護；再依個案權限二次確認，避免跨校或跨角色外流
+ */
+function handleGetAttachmentBlobs(data) {
+  const ids = Array.isArray(data.fileIds) ? data.fileIds.filter(Boolean) : [];
+  if (!ids.length) return { success: true, data: { files: [] } };
+  if (ids.length > 30) return { success: false, error: '單次最多讀取 30 個附件' };
+
+  // 專輔教師只能取得自己有權觀看的個案之附件
+  if (data.role === '專輔教師') {
+    const user = getSheetData(SHEET_USERS).find(u => u['帳號'] === data.account);
+    const userName = user ? user['姓名'] : '';
+    const cases = getSheetData(SHEET_CASES);
+    const allowed = new Set();
+    cases.forEach(c => {
+      if (isCounselorAssigned(c['專輔'], data.account, userName)) allowed.add(String(c['個案編號']));
+    });
+    const records = getSheetData(SHEET_RECORDS);
+    const okIds = {};
+    records.forEach(r => {
+      if (!allowed.has(String(r['個案編號']))) return;
+      if (!r['附件檔案']) return;
+      try {
+        JSON.parse(r['附件檔案']).forEach(a => { if (a && a.fileId) okIds[a.fileId] = true; });
+      } catch (e) { }
+    });
+    if (ids.some(id => !okIds[id])) {
+      return { success: false, error: '權限不足：含有您無法檢視的個案附件' };
+    }
+  }
+
+  const files = [];
+  ids.forEach(id => {
+    try {
+      const file = DriveApp.getFileById(id);
+      const blob = file.getBlob();
+      files.push({
+        fileId: id,
+        fileName: file.getName(),
+        mimeType: blob.getContentType(),
+        base64: Utilities.base64Encode(blob.getBytes())
+      });
+    } catch (e) {
+      files.push({ fileId: id, error: '讀取失敗：' + e.message });
+    }
+  });
+
+  return { success: true, data: { files: files } };
 }
 
 // 供系統觸發最高權限授權用

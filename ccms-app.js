@@ -76,6 +76,7 @@ createApp({
       theme: localStorage.getItem('cms_theme') || 'dark',
       // 登入
       user: null, loginForm: { account: '', password: '' },
+      mustChangePassword: false,
       // Toast
       toast: { show: false, msg: '', type: 'info' }, toastTimer: null,
       // 確認對話框
@@ -663,6 +664,15 @@ createApp({
         // 🎯 儲存 Token
         localStorage.setItem('cms_token', r.token);
         localStorage.setItem('cms_user', JSON.stringify(r.user));
+        // 🛡️ 仍為預設密碼：強制擋住畫面，要求先改密碼
+        this.mustChangePassword = !!r.mustChangePassword;
+        if (this.mustChangePassword) {
+          this.pwdForm = { oldPwd: this.loginForm.password, newPwd: '', confirmPwd: '' };
+          this.showChangePwd = true;
+          this.showToast('目前仍在使用預設密碼，請先修改密碼', 'warning');
+          this.loginForm.password = '';
+          return;
+        }
         this.showToast(`歡迎回來，${r.user.name}`, 'success');
         // 🏫 以後端回傳的校名為準（各校資料庫獨立）
         if (r.schoolName) {
@@ -2119,6 +2129,9 @@ createApp({
       if (newPwd.length < 4) {
         this.showToast('新密碼至少需要 4 個字元', 'error'); return;
       }
+      if (newPwd === 'admin123') {
+        this.showToast('新密碼不可與預設密碼相同', 'error'); return;
+      }
       this.loading = true;
       const r = await this.api('changePassword', {
         account: this.user.account,
@@ -2130,6 +2143,12 @@ createApp({
         this.showToast('密碼修改成功', 'success');
         this.showChangePwd = false;
         this.pwdForm = { oldPwd: '', newPwd: '', confirmPwd: '' };
+        this.mustChangePassword = false;
+        // 重新載入資料，恢復完整操作
+        if (this.user) {
+          await this.fetchData();
+          if (this.isAdmin) this.loadUsers();
+        }
       }
     },
 

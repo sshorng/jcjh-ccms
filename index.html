@@ -11,7 +11,7 @@
   <meta name="description" content="國中輔導個案管理系統 - 優先關懷個案名單與晤談紀錄管理">
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@300;400;500;700&display=swap" rel="stylesheet">
   <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" rel="stylesheet">
-   <link rel="stylesheet" href="ccms-style.css?v=20261015m">
+   <link rel="stylesheet" href="ccms-style.css?v=20261015n">
 </head>
 
 <body>
@@ -56,7 +56,7 @@
     </div>
 
     <!-- ==================== 主應用程式 ==================== -->
-    <div v-else class="app-layout">
+    <div v-else class="app-layout" :style="mustChangePassword ? 'filter:blur(6px);pointer-events:none;user-select:none' : ''">
       <!-- 手機選單按鈕 -->
       <button class="mobile-toggle" @click="sidebarOpen=!sidebarOpen"><i class="fas fa-bars"></i></button>
       <div :class="['sidebar-overlay', {show: sidebarOpen}]" @click="sidebarOpen=false"></div>
@@ -1555,25 +1555,32 @@
     </div>
 
     <!-- ==================== 修改密碼 Modal ==================== -->
-    <div v-if="showChangePwd" class="modal-mask" @click.self="showChangePwd=false">
+    <div v-if="showChangePwd" class="modal-mask" @click.self="!mustChangePassword && (showChangePwd=false)">
       <div class="modal modal-sm">
         <div class="modal-header">
           <h2><i class="fas fa-key"></i> 修改密碼</h2>
-          <button class="btn btn-icon" @click="showChangePwd=false"><i class="fas fa-xmark"></i></button>
+          <button class="btn btn-icon" @click="showChangePwd=false" v-if="!mustChangePassword"><i
+              class="fas fa-xmark"></i></button>
         </div>
         <div class="modal-body">
+          <div v-if="mustChangePassword"
+            style="margin-bottom:16px; padding:12px 14px; border-radius:var(--r2); background:rgba(239,68,68,.12); border:1px solid rgba(239,68,68,.4); font-size:13px; line-height:1.7;">
+            <i class="fas fa-triangle-exclamation" style="color:var(--err);"></i>
+            <strong>目前仍在使用預設密碼，必須先修改密碼才能繼續使用系統。</strong>
+            <br>請設定一組只有您知道的密碼，完成後才能進入系統。
+          </div>
           <div class="fg" style="margin-bottom:14px"><label>舊密碼</label>
             <input v-model="pwdForm.oldPwd" type="password" placeholder="請輸入目前密碼">
           </div>
           <div class="fg" style="margin-bottom:14px"><label>新密碼</label>
-            <input v-model="pwdForm.newPwd" type="password" placeholder="請輸入新密碼">
+            <input v-model="pwdForm.newPwd" type="password" placeholder="至少 4 個字元">
           </div>
           <div class="fg" style="margin-bottom:14px"><label>確認新密碼</label>
             <input v-model="pwdForm.confirmPwd" type="password" placeholder="再次輸入新密碼">
           </div>
         </div>
         <div class="modal-footer">
-          <button class="btn btn-secondary" @click="showChangePwd=false">取消</button>
+          <button class="btn btn-secondary" @click="showChangePwd=false" v-if="!mustChangePassword">取消</button>
           <button class="btn btn-primary" @click="changePassword" :disabled="loading"><i class="fas fa-check"></i>
             確認修改</button>
         </div>
@@ -1704,6 +1711,6 @@
   <script defer src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
   <script defer src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
   <script defer src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.3.0/exceljs.min.js"></script>
-   <script src="ccms-app.js?v=20261015m"></script>
+   <script src="ccms-app.js?v=20261015n"></script>
 
 </html>
