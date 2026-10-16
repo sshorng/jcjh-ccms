@@ -2225,7 +2225,7 @@ createApp({
       const win = window.open('', '_blank');
       if (this.sheetUrl) {
         if (win) win.location.href = this.sheetUrl;
-        else window.location.href = this.sheetUrl;
+        else this.showToast('瀏覽器擋住了新分頁，請允許本站開啟彈出視窗', 'warning');
         return;
       }
       this.loadingMsg = '正在取得資料庫網址...';
