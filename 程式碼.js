@@ -2,12 +2,14 @@
  * ============================================================
  * 國中輔導室個案管理系統 - GAS 後端 API
  * ============================================================
- * 部署方式：
- * 1. 開啟 Google Apps Script (script.google.com)
- * 2. 建立新專案，貼上此程式碼
+ * 部署方式（一般使用者）：
+ * 1. 複製範本試算表即可，程式碼會一併帶過去，不必手動貼上
+ * 2. 從副本的「擴充功能」>「Apps Script」
  * 3. 部署 > 新增部署作業 > 類型選「網頁應用程式」
  * 4. 執行身分：我自己 / 誰可以存取：任何人
- * 5. 複製部署的網址，貼到前端設定中
+ * 5. 複製部署的網址，貼到前端「系統設定」中
+ *
+ * 維護者手動建立時，才需要將此程式碼貼到 Code.gs。
  * ============================================================
  */
 
@@ -20,6 +22,7 @@ const SHEET_CASES = '優先關懷個案';
 const SHEET_RECORDS = '服務紀錄';
 const SHEET_CLASSES = '班級設定';
 const SHEET_SETTINGS = '系統設定';
+const APP_VERSION = '20261015h';
 
 // ============ 工作階段 (Session) 設定 ============
 const SESSION_DURATION = 21600; // 6 小時（CacheService 上限）
@@ -182,8 +185,10 @@ function initSheets() {
   const settingsSheet = ss.getSheetByName(SHEET_SETTINGS);
   const settingsData = getSheetData(SHEET_SETTINGS);
   const defaultSettings = [
+    ['SCHOOL_NAME', '臺北市立建成國民中學', '學校全名，顯示於系統標題與各項報表'],
+    ['SCHOOL_SHORT', '建成國中', '學校簡稱，顯示於側邊欄與匯出檔名'],
     ['GEMINI_API_KEY', '', '用於自動生成個案摘要的 API Key'],
-    ['GEMINI_MODEL', 'gemini-1.5-flash', '要使用的 Gemini 模型名稱'],
+    ['GEMINI_MODEL', 'gemini-flash-lite-lastest', '要使用的 Gemini 模型名稱'],
     ['SUMMARY_PROMPT', '請根據以下去識別化後的輔導紀錄，撰寫一份 300 字以內的學期個案摘要，語氣需專業且具備教育輔導觀點。', 'AI 生成摘要時的提示詞'],
     ['BACKUP_EMAIL', '', '每月自動備份 Excel 的寄送地址'],
     ['BACKUP_ENABLED', 'true', '是否啟用每月 1 號自動備份寄送 (true/false)']
@@ -422,6 +427,43 @@ function getSetting(name) {
 }
 
 /**
+ * 取得學校識別資訊（登入頁亦需顯示，故可匿名讀取）
+ */
+function getSchoolProfile() {
+  const name = getSetting('SCHOOL_NAME') || '臺北市立建成國民中學';
+  const short = getSetting('SCHOOL_SHORT') || '建成國中';
+  return { success: true, schoolName: name, schoolShort: short, version: APP_VERSION };
+}
+
+/**
+ * 儲存學校識別資訊（僅管理員）
+ */
+function handleSaveSchoolInfo(data) {
+  if (!checkAdminRole(data.role)) return { success: false, error: '權限不足，僅管理員可修改校名' };
+  const name = String(data.schoolName || '').trim();
+  const short = String(data.schoolShort || '').trim();
+  if (!name) return { success: false, error: '請填寫學校全名' };
+
+  const ss = getSpreadsheet();
+  const sheet = ss.getSheetByName(SHEET_SETTINGS);
+  const lastRow = sheet.getLastRow();
+  const rows = sheet.getRange(1, 1, lastRow, 2).getValues();
+
+  const updateSet = (key, val, desc) => {
+    const idx = rows.findIndex(r => r[0] === key);
+    if (idx !== -1) sheet.getRange(idx + 1, 2).setValue(String(val));
+    else sheet.appendRow([key, String(val), desc]);
+  };
+  updateSet('SCHOOL_NAME', name, '學校全名，顯示於系統標題與各項報表');
+  updateSet('SCHOOL_SHORT', short || name, '學校簡稱，顯示於側邊欄與匯出檔名');
+
+  delete _sheetCache[SHEET_SETTINGS];
+  CacheService.getScriptCache().remove('sheet_data_' + SHEET_SETTINGS);
+
+  return { success: true, message: '校名設定已更新', schoolName: name, schoolShort: short || name };
+}
+
+/**
  * 去識別化處理
  */
 function anonymizeData(records, studentName) {
@@ -586,6 +628,10 @@ function handleRequest(e) {
       return ContentService.createTextOutput(JSON.stringify(handleLogin(data)))
         .setMimeType(ContentService.MimeType.JSON);
     }
+    if (action === 'getSchoolInfo') {
+      return ContentService.createTextOutput(JSON.stringify(getSchoolProfile()))
+        .setMimeType(ContentService.MimeType.JSON);
+    }
     if (action === 'init') {
       return ContentService.createTextOutput(JSON.stringify({ success: true, data: initSheets() }))
         .setMimeType(ContentService.MimeType.JSON);
@@ -741,6 +787,9 @@ function handleRequest(e) {
       case 'testBackupEmail':
         result = handleTestBackupEmail(data);
         break;
+      case 'saveSchoolInfo':
+        result = handleSaveSchoolInfo(data);
+        break;
 
       case 'generateSummary':
         result = handleGenerateSummary(data);
@@ -857,7 +906,9 @@ function handleLogin(data) {
   return {
     success: true,
     token: token,
-    user: userData
+    user: userData,
+    schoolName: getSetting('SCHOOL_NAME') || '臺北市立建成國民中學',
+    schoolShort: getSetting('SCHOOL_SHORT') || '建成國中'
   };
 }
 

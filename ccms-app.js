@@ -5,6 +5,9 @@
 
 // ========== GAS URL 設定 ==========
 // 若要固定網址，請在此填入已部署的 GAS Web App URL
+const APP_VERSION = '20261015h';
+const DEFAULT_SCHOOL_NAME = '臺北市立建成國民中學';
+const DEFAULT_SCHOOL_SHORT = '建成國中';
 const DEFAULT_GAS_URL = 'https://script.google.com/macros/s/AKfycbxnX1x-huPp_UOQVJos4jSX_tbIv9wwpDXIuVfw6SOnmaWfeS-fIxaMPOl8rM4lvJB8kg/exec';
 
 const { createApp } = Vue;
@@ -54,6 +57,18 @@ createApp({
       // 系統狀態
       gasUrl: '', loading: false, loadingMsg: '讀取中...', sidebarOpen: false,
       page: 'dashboard',
+      // 🏫 校名識別（預設為建成國中，各校可於後端系統設定自行修改）
+      schoolName: DEFAULT_SCHOOL_NAME,
+      schoolShort: DEFAULT_SCHOOL_SHORT,
+      // 🛠️ 系統設定面板（登入頁與登入後皆可使用）
+      showSetupModal: false,
+      setupForm: { gasUrl: '' },
+      testing: false,
+      testResult: null,
+      serverVersion: '',
+      needsSetup: false,
+      shareLinkPreview: '',
+      schoolForm: { schoolName: DEFAULT_SCHOOL_NAME, schoolShort: DEFAULT_SCHOOL_SHORT },
       // 主題 (dark | light)
       theme: localStorage.getItem('cms_theme') || 'dark',
       // 登入
@@ -116,6 +131,10 @@ createApp({
   },
 
   computed: {
+    // 🏫 校名識別（供全系統與各項報表統一引用）
+    schoolTitle() { return this.schoolShort || DEFAULT_SCHOOL_SHORT; },
+    systemTitle() { return `${this.schoolShort || DEFAULT_SCHOOL_SHORT}輔導個案管理系統`; },
+    schoolFullName() { return this.schoolName || DEFAULT_SCHOOL_NAME; },
     isAdmin() { return this.user && this.user.role === '管理員'; },
     // 主題 CSS 統一綁定
     themeClass() { return this.theme === 'light' ? 'light-theme' : ''; },
@@ -632,6 +651,16 @@ createApp({
         localStorage.setItem('cms_token', r.token);
         localStorage.setItem('cms_user', JSON.stringify(r.user));
         this.showToast(`歡迎回來，${r.user.name}`, 'success');
+        // 🏫 以後端回傳的校名為準（各校資料庫獨立）
+        if (r.schoolName) {
+          this.schoolName = r.schoolName;
+          localStorage.setItem('cms_school_name', r.schoolName);
+        }
+        if (r.schoolShort) {
+          this.schoolShort = r.schoolShort;
+          localStorage.setItem('cms_school_short', r.schoolShort);
+        }
+        document.title = this.systemTitle;
 
         this.loadCache();
         await this.fetchData();
@@ -780,6 +809,22 @@ createApp({
               classes: r.data.configs.classes || []
             };
             if (r.data.configs.systemSettings) {
+              // 🏫 校名設定（各校資料庫獨立，後端為唯一真實來源）
+              const nameSet = this.systemSettings.find(s => s['設定項目'] === 'SCHOOL_NAME');
+              const shortSet = this.systemSettings.find(s => s['設定項目'] === 'SCHOOL_SHORT');
+              if (nameSet && nameSet['設定值']) {
+                this.schoolName = nameSet['設定值'];
+                localStorage.setItem('cms_school_name', this.schoolName);
+              }
+              if (shortSet && shortSet['設定值']) {
+                this.schoolShort = shortSet['設定值'];
+                localStorage.setItem('cms_school_short', this.schoolShort);
+              }
+              this.schoolForm = {
+                schoolName: this.schoolName,
+                schoolShort: this.schoolShort
+              };
+              document.title = this.systemTitle;
               this.systemSettings = r.data.configs.systemSettings;
               const emailSet = this.systemSettings.find(s => s['設定項目'] === 'BACKUP_EMAIL');
               const enabledSet = this.systemSettings.find(s => s['設定項目'] === 'BACKUP_ENABLED');
@@ -1695,7 +1740,7 @@ createApp({
       const buffer = await workbook.xlsx.writeBuffer();
       const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
       const padMonth = String(month).padStart(2, '0');
-      saveAs(blob, `${sysYear}${padMonth}輔導教師工作成果表格.xlsx`);
+      saveAs(blob, `${this.schoolShort}_${sysYear}${padMonth}輔導教師工作成果表格.xlsx`);
       this.showToast('月報表匯出成功', 'success');
     },
 
@@ -2098,23 +2143,161 @@ createApp({
     initGasUrl() {
       const params = new URLSearchParams(window.location.search);
       const configParam = params.get('config');
+      let fromLink = false;
+
       if (configParam) {
         try {
-          this.gasUrl = atob(configParam);
-          localStorage.setItem('cms_gas_url', this.gasUrl);
+          const decoded = decodeURIComponent(escape(atob(configParam)));
+          let url = decoded;
+          // 新格式：base64(JSON)；舊格式：base64(純網址)
+          if (decoded.trim().charAt(0) === '{') {
+            const obj = JSON.parse(decoded);
+            url = obj.u || '';
+            if (obj.s) this.schoolShort = obj.s;
+            if (obj.n) this.schoolName = obj.n;
+          }
+          if (url) {
+            this.gasUrl = url;
+            localStorage.setItem('cms_gas_url', url);
+            if (this.schoolShort) localStorage.setItem('cms_school_short', this.schoolShort);
+            if (this.schoolName) localStorage.setItem('cms_school_name', this.schoolName);
+            fromLink = true;
+          }
         } catch (e) { }
-      } else {
+      }
+
+      if (!fromLink) {
+        this.schoolName = localStorage.getItem('cms_school_name') || DEFAULT_SCHOOL_NAME;
+        this.schoolShort = localStorage.getItem('cms_school_short') || DEFAULT_SCHOOL_SHORT;
         this.gasUrl = localStorage.getItem('cms_gas_url') || DEFAULT_GAS_URL;
       }
+      this.setupForm.gasUrl = this.gasUrl;
+      document.title = this.systemTitle;
     },
+    // 產生快取分享網址（帶入 GAS 網址、校名與版本參數）
     generateShareLink() {
-      if (!this.gasUrl) { this.showToast('請先設定 GAS URL', 'error'); return; }
+      if (!this.gasUrl) { this.showToast('請先設定 GAS 網址', 'error'); return; }
       const base = window.location.origin + window.location.pathname;
-      const encoded = btoa(this.gasUrl);
-      const link = `${base}?config=${encoded}`;
-      navigator.clipboard.writeText(link).then(() => {
-        this.showToast('分享連結已複製到剪貼簿', 'success');
+      const payload = {
+        u: this.gasUrl,
+        n: this.schoolName || DEFAULT_SCHOOL_NAME,
+        s: this.schoolShort || DEFAULT_SCHOOL_SHORT
+      };
+      let encoded;
+      try {
+        // 以 UTF-8 編碼，確保中文校名不會讓 btoa 報錯
+        encoded = btoa(unescape(encodeURIComponent(JSON.stringify(payload))));
+      } catch (e) {
+        encoded = btoa(this.gasUrl);
+      }
+      const link = `${base}?v=${APP_VERSION}&config=${encoded}`;
+      this.shareLinkPreview = link;
+      this.copyText(link, '分享連結已複製到剪貼簿');
+    },
+    copyText(text, msg) {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text)
+          .then(() => this.showToast(msg || '已複製', 'success'))
+          .catch(() => this.showToast('複製失敗，請手動選取', 'error'));
+      }
+    },
+    openSetupModal() {
+      this.setupForm.gasUrl = this.gasUrl || DEFAULT_GAS_URL;
+      this.testResult = null;
+      this.showSetupModal = true;
+    },
+    // 連線測試（不影響目前設定）
+    async testConnection() {
+      const url = String(this.setupForm.gasUrl || '').trim();
+      if (!url) { this.showToast('請先貼上 GAS 網址', 'warning'); return; }
+      this.testing = true;
+      this.testResult = null;
+      try {
+        const r = await fetch(url, {
+          method: 'POST',
+          mode: 'cors',
+          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+          body: JSON.stringify({ action: 'getSchoolInfo' }),
+          signal: (typeof AbortSignal !== 'undefined' && AbortSignal.timeout ? AbortSignal.timeout(30000) : undefined)
+        });
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        const data = JSON.parse(await r.text());
+        if (data && data.success) {
+          this.testResult = { ok: true, msg: '連線成功，目前校名為「' + data.schoolName + '」' };
+          if (data.version) this.serverVersion = data.version;
+        } else {
+          this.testResult = { ok: false, msg: '網址可連線，但回應格式不正確，請確認是否為 GAS Web App 網址。' };
+        }
+      } catch (e) {
+        this.testResult = { ok: false, msg: '連線失敗：' + (e && e.message ? e.message : '未知錯誤') };
+      } finally {
+        this.testing = false;
+      }
+    },
+    // 儲存 GAS 網址並套用
+    async saveSetup() {
+      const url = String(this.setupForm.gasUrl || '').trim();
+      if (!url) { this.showToast('請先貼上 GAS 網址', 'warning'); return; }
+      if (!/^https:\/\/script\.google\.com\/macros\/s\/.+\/exec$/.test(url)) {
+        this.showToast('網址格式不正確，應為 script.google.com/macros/s/.../exec', 'error');
+        return;
+      }
+      this.gasUrl = url;
+      localStorage.setItem('cms_gas_url', url);
+      this.setupForm.gasUrl = url;
+      this.showToast('已儲存 GAS 網址', 'success');
+      await this.fetchSchoolInfo(true);
+      if (this.user) this.fetchData(true);
+    },
+    // 讀取後端校名（免登入）
+    async fetchSchoolInfo(silent = false) {
+      const cachedName = localStorage.getItem('cms_school_name');
+      const cachedShort = localStorage.getItem('cms_school_short');
+      if (cachedName) this.schoolName = cachedName;
+      if (cachedShort) this.schoolShort = cachedShort;
+      try {
+        const r = await fetch(this.gasUrl, {
+          method: 'POST',
+          mode: 'cors',
+          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+          body: JSON.stringify({ action: 'getSchoolInfo' }),
+          signal: (typeof AbortSignal !== 'undefined' && AbortSignal.timeout ? AbortSignal.timeout(20000) : undefined)
+        });
+        const data = JSON.parse(await r.text());
+        if (data && data.success) {
+          if (data.schoolName) {
+            this.schoolName = data.schoolName;
+            localStorage.setItem('cms_school_name', data.schoolName);
+          }
+          if (data.schoolShort) {
+            this.schoolShort = data.schoolShort;
+            localStorage.setItem('cms_school_short', data.schoolShort);
+          }
+          if (data.version) this.serverVersion = data.version;
+          this.needsSetup = false;
+        }
+      } catch (e) {
+        if (!silent) this.needsSetup = true;
+      }
+      document.title = this.systemTitle;
+    },
+    // 儲存校名（僅管理員，寫回後端系統設定）
+    async saveSchoolInfo() {
+      if (!this.schoolForm.schoolName.trim()) { this.showToast('請填寫學校全名', 'warning'); return; }
+      this.loading = true;
+      const r = await this.api('saveSchoolInfo', {
+        schoolName: this.schoolForm.schoolName,
+        schoolShort: this.schoolForm.schoolShort
       });
+      this.loading = false;
+      if (r?.success) {
+        this.schoolName = r.schoolName || this.schoolForm.schoolName;
+        this.schoolShort = r.schoolShort || this.schoolForm.schoolShort;
+        localStorage.setItem('cms_school_name', this.schoolName);
+        localStorage.setItem('cms_school_short', this.schoolShort);
+        document.title = this.systemTitle;
+        this.showToast(r.message || '校名已更新', 'success');
+      }
     },
     async runBatchUpdate(action) {
       const msgs = {
@@ -2133,10 +2316,16 @@ createApp({
         }
       });
     },
+    // 清除快取並回到建成國中預設值
     clearSettings() {
       localStorage.removeItem('cms_gas_url');
+      localStorage.removeItem('cms_school_name');
+      localStorage.removeItem('cms_school_short');
       localStorage.removeItem('cms_user');
+      localStorage.removeItem('cms_token');
       this.gasUrl = DEFAULT_GAS_URL;
+      this.schoolName = DEFAULT_SCHOOL_NAME;
+      this.schoolShort = DEFAULT_SCHOOL_SHORT;
       this.showToast('設定已清除，頁面即將重新整理', 'info');
       setTimeout(() => location.reload(), 1500);
     },
@@ -2330,7 +2519,7 @@ createApp({
           // 標題
           classChildren.push(new Paragraph({
             children: [
-              new TextRun({ text: `臺北市立建成國民中學 ${tY} 學年度 `, font: KAI_FONT, size: FONT_SIZE_TITLE, bold: true }),
+              new TextRun({ text: `${this.schoolFullName} ${tY} 學年度 `, font: KAI_FONT, size: FONT_SIZE_TITLE, bold: true }),
               new TextRun({ text: `${tS}`, font: KAI_FONT, size: FONT_SIZE_TITLE, bold: true, color: "FF0000" }),
               new TextRun({ text: ` 「優先關懷學生」回覆表`, font: KAI_FONT, size: FONT_SIZE_TITLE, bold: true })
             ],
@@ -2874,7 +3063,7 @@ createApp({
         sections: [{
           properties: { page: { margin: { top: 720, bottom: 720, left: 720, right: 720 } } },
           children: [
-            new Paragraph({ children: [new TextRun({ text: "建成國中學生輔導紀錄", bold: true, size: FONT_SIZE_TITLE, color: "000000" })], alignment: AlignmentType.CENTER, spacing: { after: 400 } }),
+            new Paragraph({ children: [new TextRun({ text: this.schoolTitle + "學生輔導紀錄", bold: true, size: FONT_SIZE_TITLE, color: "000000" })], alignment: AlignmentType.CENTER, spacing: { after: 400 } }),
             new Table({ width: { size: 100, type: WidthType.PERCENTAGE }, rows: infoRows }),
             new Paragraph({ children: [new TextRun({ text: "輔導歷程與服務紀錄", bold: true, size: FONT_SIZE + 6, color: "000000" })], spacing: { before: 600, after: 200 } }),
             new Table({ width: { size: 100, type: WidthType.PERCENTAGE }, rows: recordRows })
@@ -3075,7 +3264,7 @@ createApp({
         }
 
         const zipBlob = await zip.generateAsync({ type: 'blob' });
-        saveAs(zipBlob, `CCMS_個案匯出_${this.backupGrade}年級_${this.formatDate(new Date())}.zip`);
+        saveAs(zipBlob, `${this.schoolShort}_個案匯出_${this.backupGrade}年級_${this.formatDate(new Date())}.zip`);
         this.showToast('打包下載完成！', 'success');
 
       } catch (e) {
@@ -3153,7 +3342,7 @@ createApp({
         }
 
         const zipBlob = await zip.generateAsync({ type: 'blob' });
-        saveAs(zipBlob, `CCMS_勾選個案匯出_${this.formatDate(new Date())}.zip`);
+        saveAs(zipBlob, `${this.schoolShort}_勾選個案匯出_${this.formatDate(new Date())}.zip`);
         this.showToast('打包下載完成！', 'success');
 
       } catch (e) {
@@ -3200,7 +3389,7 @@ createApp({
         createSheet('服務紀錄總表', records);
 
         const buffer = await workbook.xlsx.writeBuffer();
-        saveAs(new Blob([buffer]), `CCMS_原始資料備份_${this.backupGrade}年級_${this.formatDate(new Date())}.xlsx`);
+        saveAs(new Blob([buffer]), `${this.schoolShort}_原始資料備份_${this.backupGrade}年級_${this.formatDate(new Date())}.xlsx`);
         this.showToast('Excel 資料匯出成功', 'success');
       } catch (e) {
         console.error(e);
@@ -3241,6 +3430,19 @@ createApp({
 
   mounted() {
     this.initGasUrl();
+    // 🏫 先以本機快取的校名立即上色，再向後端校正（不阻塞畫面）
+    this.fetchSchoolInfo(true);
+
+    // 🧙 首次開啟精靈：無法連線且從未設定過時，主動引導部署
+    if (!localStorage.getItem('cms_setup_done') && !localStorage.getItem('cms_gas_url')) {
+      setTimeout(async () => {
+        await this.fetchSchoolInfo(false);
+        if (this.needsSetup) {
+          this.openSetupModal();
+          localStorage.setItem('cms_setup_done', '1');
+        }
+      }, 1800);
+    }
 
     // 🚀 載入持久化隨手記
     this.todoNote = localStorage.getItem('cms_todo_note') || '';
