@@ -11,7 +11,7 @@
   <meta name="description" content="國中輔導個案管理系統 - 優先關懷個案名單與晤談紀錄管理">
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@300;400;500;700&display=swap" rel="stylesheet">
   <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" rel="stylesheet">
-   <link rel="stylesheet" href="ccms-style.css?v=20261015i">
+   <link rel="stylesheet" href="ccms-style.css?v=20261015k">
 </head>
 
 <body>
@@ -66,7 +66,7 @@
         <div class="brand">
           <div class="logo">🏫</div>
           <h2>{{ systemTitle }}</h2>
-          <small>CCMS 校園個案管理</small>
+          <small>{{ schoolTagline }}</small>
         </div>
         <nav>
           <a :class="{active: page==='dashboard'}" @click="navigate('dashboard')"><i class="fas fa-chart-pie"></i>
@@ -783,65 +783,40 @@
 
           <!-- 分頁籤 -->
           <div class="tabs" style="margin-bottom: 20px;">
-            <button class="tab-btn" :class="{active: settingsTab === 'school'}" @click="settingsTab = 'school'"><i
-                class="fas fa-school"></i> 校名設定</button>
             <button class="tab-btn" :class="{active: settingsTab === 'export'}" @click="settingsTab = 'export'"><i
                 class="fas fa-file-export"></i> 匯出與報表</button>
             <button class="tab-btn" :class="{active: settingsTab === 'config'}" @click="settingsTab = 'config'"><i
-                class="fas fa-sitemap"></i> 班級配置</button>
+                class="fas fa-sitemap"></i> 學校配置</button>
             <button class="tab-btn" :class="{active: settingsTab === 'maintenance'}"
               @click="settingsTab = 'maintenance'"><i class="fas fa-toolbox"></i> 系統維護</button>
           </div>
 
-          <!-- 0. 校名設定 -->
-          <div class="card" v-if="settingsTab === 'school'">
-            <div class="card-body fade-in">
-              <h3 style="margin-bottom:12px; font-size:16px;"><i class="fas fa-school" style="color:var(--pri)"></i>
-                學校名稱設定</h3>
-              <p style="margin-bottom:18px; font-size:13px; color:var(--tx3); line-height:1.8;">
-                校名儲存於本<strong>學校自己的雲端試算表</strong>，修改後系統標題、登入頁、側邊欄與所有匯出報表
-                （Word、Excel、ZIP）會一併套用。若您是第一次使用本系統的其他學校，請在下方填寫貴校名稱即可。
-              </p>
-              <div class="form-grid">
-                <div class="fg">
-                  <label>學校全名 <span style="color:var(--err)">*必填</span></label>
-                  <input v-model="schoolForm.schoolName" placeholder="例：臺北市立建成國民中學">
-                  <div style="font-size:12px; color:var(--tx3); margin-top:5px;">顯示於瀏覽器標題與報表抬頭</div>
-                </div>
-                <div class="fg">
-                  <label>學校簡稱</label>
-                  <input v-model="schoolForm.schoolShort" placeholder="例：建成國中">
-                  <div style="font-size:12px; color:var(--tx3); margin-top:5px;">顯示於側邊欄與匯出檔名，留空則沿用全名</div>
-                </div>
-              </div>
-              <div style="margin-top:20px; display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
-                <button class="btn btn-primary" @click="saveSchoolInfo()" :disabled="loading">
-                  <i class="fas fa-save"></i> 儲存校名
-                </button>
-                <button class="btn btn-secondary" @click="openSetupModal()">
-                  <i class="fas fa-share-nodes"></i> 分享給其他學校
-                </button>
-              </div>
-              <div style="margin-top:18px; padding-top:15px; border-top:1px solid var(--bd);">
-                <h4 style="font-size:14px; margin-bottom:12px;"><i class="fas fa-plug"></i> 資料庫連線</h4>
-                <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
-                  <input v-model="setupForm.gasUrl" placeholder="https://script.google.com/macros/s/.../exec"
-                    style="flex:1; min-width:280px; padding:8px 12px;">
-                  <button class="btn btn-secondary btn-sm" @click="testConnection()" :disabled="testing || !setupForm.gasUrl">
-                    <i class="fas fa-plug" :class="{ 'fa-spin': testing }"></i> 測試連線
-                  </button>
-                  <button class="btn btn-primary btn-sm" @click="saveSetup()"><i class="fas fa-save"></i> 儲存並套用</button>
-                </div>
-                <p style="font-size:12px; color:var(--tx3); margin-top:10px;">
-                  系統版本：{{ serverVersion || '尚未連線' }}
-                </p>
-              </div>
-            </div>
-          </div>
-
-          <!-- 1. 表格與班級配置 -->
+          <!-- 1. 學校配置（含校名設定） -->
           <div class="card" v-if="settingsTab === 'config'">
             <div class="card-body">
+              <!-- 校名設定：精簡單列 -->
+              <div class="fade-in"
+                style="display:flex; gap:10px; align-items:flex-end; flex-wrap:wrap; padding-bottom:16px; margin-bottom:18px; border-bottom:1px solid var(--bd);">
+                <div style="flex:1; min-width:220px;">
+                  <label style="display:block; font-size:12px; color:var(--tx2); margin-bottom:5px;">
+                    學校全名 <span style="color:var(--err)">*</span></label>
+                  <input v-model="schoolForm.schoolName" placeholder="例：臺北市立建成國民中學" style="padding:8px 12px;">
+                </div>
+                <div style="flex:1; min-width:160px;">
+                  <label style="display:block; font-size:12px; color:var(--tx2); margin-bottom:5px;">學校簡稱</label>
+                  <input v-model="schoolForm.schoolShort" placeholder="例：建成國中" style="padding:8px 12px;">
+                </div>
+                <div style="flex:0 1 120px;">
+                  <label style="display:block; font-size:12px; color:var(--tx2); margin-bottom:5px;">英文簡稱</label>
+                  <input v-model="schoolForm.schoolAbbr" placeholder="JCJH" maxlength="12"
+                    style="padding:8px 12px; text-transform:uppercase;">
+                </div>
+                <button class="btn btn-primary btn-sm" @click="saveSchoolInfo()" :disabled="loading"
+                  style="height:37px; padding:0 16px;">
+                  <i class="fas fa-save"></i> 儲存校名
+                </button>
+              </div>
+
               <div class="fade-in" style="margin-top:10px">
                 <p style="margin-bottom:10px; font-size:13px; color:var(--tx3)">* 設定各班級對應的人員，新增個案時會自動帶入。</p>
                 <div class="table-wrap">
@@ -1236,20 +1211,20 @@
             <h4><i class="fas fa-school"></i> 學校識別</h4>
             <p style="font-size:13px; color:var(--tx3); margin-bottom:12px; line-height:1.7;">
               目前校名：<strong style="color:var(--pri)">{{ schoolFullName }}</strong>
-              ({{ schoolTitle }})。校名儲存於各校自己的雲端試算表，<strong>登入後由管理員於「系統配置 → 校名設定」修改</strong>，無須設定本機。
+              ({{ schoolTitle }})。校名儲存於各校自己的雲端試算表，<strong>登入後由管理員於「系統配置 → 學校配置」頁頂端修改</strong>，無須設定本機。
             </p>
           </div>
 
           <!-- 資料庫連線 -->
           <div class="form-section">
             <h4><i class="fas fa-database"></i> 資料庫連線設定</h4>
-            <p style="font-size:13px; color:var(--tx3); margin-bottom:12px; line-height:1.7;">
-              本校使用者無須設定，預設已連上資料庫。若您是第一次使用本系統的<strong>其他學校</strong>，請將該校提供的
-              <strong>「快取分享網址」</strong>直接在瀏覽器開啟即可，系統會自動記住該校的資料庫位置。
+            <p style="font-size:13px; color:var(--tx3); margin-bottom:10px; line-height:1.7;">
+              <i class="fas fa-circle-info" :style="{ color: usingDefaultGas ? 'var(--ok)' : 'var(--pri)' }"></i>
+              {{ gasStatusText }}
             </p>
             <div class="fg" style="margin-bottom:12px">
               <label>GAS Web App 網址</label>
-              <input v-model="setupForm.gasUrl" placeholder="https://script.google.com/macros/s/.../exec">
+              <input v-model="setupForm.gasUrl" placeholder="留空表示沿用系統預設；請填入貴校的 script.google.com/macros/s/.../exec">
             </div>
             <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:center;">
               <button class="btn btn-secondary btn-sm" @click="testConnection()" :disabled="testing || !setupForm.gasUrl">
@@ -1732,6 +1707,6 @@
   <script defer src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
   <script defer src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
   <script defer src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.3.0/exceljs.min.js"></script>
-   <script src="ccms-app.js?v=20261015i"></script>
+   <script src="ccms-app.js?v=20261015k"></script>
 
 </html>

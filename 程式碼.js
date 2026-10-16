@@ -187,6 +187,7 @@ function initSheets() {
   const defaultSettings = [
     ['SCHOOL_NAME', '臺北市立建成國民中學', '學校全名，顯示於系統標題與各項報表'],
     ['SCHOOL_SHORT', '建成國中', '學校簡稱，顯示於側邊欄與匯出檔名'],
+    ['SCHOOL_ABBR', 'JCJH', '學校英文簡稱，顯示於側邊欄副標'],
     ['GEMINI_API_KEY', '', '用於自動生成個案摘要的 API Key'],
     ['GEMINI_MODEL', 'gemini-flash-lite-lastest', '要使用的 Gemini 模型名稱'],
     ['SUMMARY_PROMPT', '請根據以下去識別化後的輔導紀錄，撰寫一份 300 字以內的學期個案摘要，語氣需專業且具備教育輔導觀點。', 'AI 生成摘要時的提示詞'],
@@ -432,7 +433,8 @@ function getSetting(name) {
 function getSchoolProfile() {
   const name = getSetting('SCHOOL_NAME') || '臺北市立建成國民中學';
   const short = getSetting('SCHOOL_SHORT') || '建成國中';
-  return { success: true, schoolName: name, schoolShort: short, version: APP_VERSION };
+  const abbr = getSetting('SCHOOL_ABBR') || 'JCJH';
+  return { success: true, schoolName: name, schoolShort: short, schoolAbbr: abbr, version: APP_VERSION };
 }
 
 /**
@@ -442,6 +444,7 @@ function handleSaveSchoolInfo(data) {
   if (!checkAdminRole(data.role)) return { success: false, error: '權限不足，僅管理員可修改校名' };
   const name = String(data.schoolName || '').trim();
   const short = String(data.schoolShort || '').trim();
+  const abbr = String(data.schoolAbbr || '').trim().toUpperCase();
   if (!name) return { success: false, error: '請填寫學校全名' };
 
   const ss = getSpreadsheet();
@@ -456,11 +459,18 @@ function handleSaveSchoolInfo(data) {
   };
   updateSet('SCHOOL_NAME', name, '學校全名，顯示於系統標題與各項報表');
   updateSet('SCHOOL_SHORT', short || name, '學校簡稱，顯示於側邊欄與匯出檔名');
+  updateSet('SCHOOL_ABBR', abbr || 'CCMS', '學校英文簡稱，顯示於側邊欄副標');
 
   delete _sheetCache[SHEET_SETTINGS];
   CacheService.getScriptCache().remove('sheet_data_' + SHEET_SETTINGS);
 
-  return { success: true, message: '校名設定已更新', schoolName: name, schoolShort: short || name };
+  return {
+    success: true,
+    message: '校名設定已更新',
+    schoolName: name,
+    schoolShort: short || name,
+    schoolAbbr: abbr || 'CCMS'
+  };
 }
 
 /**
@@ -908,7 +918,8 @@ function handleLogin(data) {
     token: token,
     user: userData,
     schoolName: getSetting('SCHOOL_NAME') || '臺北市立建成國民中學',
-    schoolShort: getSetting('SCHOOL_SHORT') || '建成國中'
+    schoolShort: getSetting('SCHOOL_SHORT') || '建成國中',
+    schoolAbbr: getSetting('SCHOOL_ABBR') || 'JCJH'
   };
 }
 
