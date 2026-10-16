@@ -69,6 +69,7 @@ createApp({
       testResult: null,
       serverVersion: '',
       sheetUrl: '',
+      backendOutdated: false,
       needsSetup: false,
       shareLinkPreview: '',
       schoolForm: { schoolName: DEFAULT_SCHOOL_NAME, schoolShort: DEFAULT_SCHOOL_SHORT, schoolAbbr: DEFAULT_SCHOOL_ABBR },
@@ -2226,10 +2227,13 @@ createApp({
       }
       this.loadingMsg = '正在取得資料庫網址...';
       this.loading = true;
+      this.backendOutdated = false;
       await this.fetchSchoolInfo(true);
       this.loading = false;
       if (this.sheetUrl) {
         window.open(this.sheetUrl, '_blank');
+      } else if (this.backendOutdated) {
+        this.showToast('後端尚未更新，請將新版 Code.gs 貼到 Apps Script 並重新部署', 'error');
       } else {
         this.showToast('無法取得試算表網址，請確認後端已部署且連線正常', 'error');
       }
@@ -2356,6 +2360,9 @@ createApp({
           if (data.version) this.serverVersion = data.version;
           if (data.sheetUrl) this.sheetUrl = data.sheetUrl;
           this.needsSetup = false;
+        } else {
+          // 🛡️ 後端尚未部署新版（無 getSchoolInfo 公開 action）會回 401
+          this.backendOutdated = true;
         }
       } catch (e) {
         if (!silent) this.needsSetup = true;
