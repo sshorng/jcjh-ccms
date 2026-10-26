@@ -780,6 +780,25 @@ createApp({
       this.caseForm.name = (orphan && orphan.name) || '';
       this.showToast('請補齊年級、班級、座號後儲存，這筆孤兒紀錄就會自動歸位。', 'info');
     },
+    deleteOrphanRecord(orphan) {
+      if (!orphan || !orphan.recordId) {
+        this.showToast('這筆紀錄缺少紀錄編號，請先更新後端程式碼再試。', 'error');
+        return;
+      }
+      const who = orphan.name ? `${orphan.name}（${orphan.id}）` : orphan.id;
+      this.confirmAction(
+        `確定要刪除這筆孤兒紀錄嗎？\n${who}｜${orphan.date}\n刪除後無法復原，雲端附件也會一併移除。`,
+        async () => {
+          this.loading = true;
+          const r = await this.api('deleteRecord', { id: orphan.recordId });
+          this.loading = false;
+          if (r?.success) {
+            this.showToast('孤兒紀錄已刪除', 'success');
+            this.runHealthCheck();
+          }
+        }
+      );
+    },
     async updateBackupSettings() {
       if (!this.backupSettings.email) {
         this.showToast('請填寫備份電子郵件', 'warning');

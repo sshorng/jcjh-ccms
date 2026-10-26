@@ -1964,6 +1964,7 @@ function handleDeleteRecord(data) {
     } catch(e) {}
   }
 
+  delete _sheetCache[SHEET_RECORDS];
   CacheService.getScriptCache().remove('sheet_data_' + SHEET_RECORDS);
 
   return { success: true, message: '紀錄已刪除' };
@@ -2405,6 +2406,7 @@ function handleCheckIntegrity(data) {
     if (!caseIds.has(normalizeCaseId(id))) {
       report.orphans.push({
         id,
+        recordId: String(r['紀錄編號'] || '').trim(),
         date: r['日期時間'] || '(未填)',
         row: idx + 2,
         name: resolveStudentName(r, nameLookups),
