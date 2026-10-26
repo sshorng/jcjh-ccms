@@ -295,21 +295,51 @@ function generateId(prefix) {
 const _sheetCache = {};
 
 /**
- * 確保「服務紀錄」具備指定欄位（一律加在最右側，讀寫靠標題對齊，不會造成錯欄）。
+ * 讀取「服務紀錄」完整標題列。
+ * 取到工作表實際最大欄，避免 getDataRange 被資料範圍截斷而找不到後面的欄位。
+ */
+function getRecordSheetHeaders(sheet) {
+  const width = Math.max(sheet.getLastColumn(), HEADERS[SHEET_RECORDS].length, 1);
+  return sheet.getRange(1, 1, 1, width).getValues()[0].map(h => String(h).trim());
+}
+
+/**
+ * 確保「服務紀錄」具備指定欄位。
+ * 先依標題名稱找欄位，只要欄位存在（不管在第幾欄）就完全不動；
+ * 真的不存在時才插到邏輯位置，例如「學生姓名」插在「附件檔案」之前，而不是一律附加到最後一欄。
  */
 function ensureRecordHeaderColumn(colName) {
   const ss = getSpreadsheet();
   const sheet = ss.getSheetByName(SHEET_RECORDS);
   if (!sheet) return false;
 
-  const lastColumn = sheet.getLastColumn();
-  const headerWidth = Math.max(lastColumn, 1);
-  const headers = sheet.getRange(1, 1, 1, headerWidth).getValues()[0]
-    .map(h => String(h).trim());
-  if (headers.includes(colName)) return false;
+  const headers = getRecordSheetHeaders(sheet);
+  if (headers.indexOf(colName) >= 0) return false;
 
-  const targetColumn = lastColumn > 0 && headers.some(Boolean) ? lastColumn + 1 : 1;
-  sheet.getRange(1, targetColumn).setValue(colName).setFontWeight('bold');
+  const anchors = {
+    '時間': { before: '對象', after: '日期時間' },
+    '學生姓名': { before: '附件檔案', after: '建立日期' }
+  };
+  const rule = anchors[colName] || {};
+  const beforeIdx = rule.before ? headers.indexOf(rule.before) : -1;
+  const afterIdx = rule.after ? headers.indexOf(rule.after) : -1;
+
+  let insertAt;
+  if (beforeIdx >= 0) {
+    insertAt = beforeIdx + 1;
+  } else if (afterIdx >= 0) {
+    insertAt = afterIdx + 2;
+  } else {
+    insertAt = sheet.getLastColumn() + 1;
+  }
+
+  if (insertAt > sheet.getMaxColumns()) {
+    sheet.insertColumnsAfter(sheet.getMaxColumns(), insertAt - sheet.getMaxColumns());
+  } else {
+    sheet.insertColumnBefore(insertAt);
+  }
+  sheet.getRange(1, insertAt).setValue(colName).setFontWeight('bold');
+
   delete _sheetCache[SHEET_RECORDS];
   CacheService.getScriptCache().remove('sheet_data_' + SHEET_RECORDS);
   return true;
@@ -426,24 +456,29 @@ function syncRecordStudentName(caseId, name) {
   const sheet = getSpreadsheet().getSheetByName(SHEET_RECORDS);
   if (!sheet) return 0;
 
-  const values = sheet.getDataRange().getValues();
-  if (values.length < 2) return 0;
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 2) return 0;
 
-  const headers = values[0].map(h => String(h).trim());
+  // 一律用標題名稱定位欄位，不管「學生姓名」被放在第幾欄
+  const headers = getRecordSheetHeaders(sheet);
   const idIdx = headers.indexOf('個案編號');
   const nameIdx = headers.indexOf('學生姓名');
   if (idIdx < 0 || nameIdx < 0) return 0;
 
+  const data = sheet.getRange(2, 1, lastRow - 1, headers.length).getValues();
+  const nameColumn = [];
   let changed = 0;
-  for (let i = 1; i < values.length; i++) {
-    if (normalizeCaseId(values[i][idIdx]) !== key) continue;
-    if (String(values[i][nameIdx] || '').trim()) continue;
-    values[i][nameIdx] = studentName;
-    changed++;
-  }
+
+  data.forEach(row => {
+    if (normalizeCaseId(row[idIdx]) === key && !String(row[nameIdx] || '').trim()) {
+      row[nameIdx] = studentName;
+      changed++;
+    }
+    nameColumn.push([row[nameIdx] === undefined ? '' : row[nameIdx]]);
+  });
 
   if (changed > 0) {
-    sheet.getRange(1, 1, values.length, headers.length).setValues(values);
+    sheet.getRange(2, nameIdx + 1, nameColumn.length, 1).setValues(nameColumn);
     delete _sheetCache[SHEET_RECORDS];
     CacheService.getScriptCache().remove('sheet_data_' + SHEET_RECORDS);
   }
@@ -460,44 +495,51 @@ function backfillRecordStudentNames() {
   const sheet = getSpreadsheet().getSheetByName(SHEET_RECORDS);
   if (!sheet) return { filled: 0, unresolved: 0, total: 0 };
 
-  const values = sheet.getDataRange().getValues();
-  if (values.length < 2) return { filled: 0, unresolved: 0, total: 0 };
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 2) return { filled: 0, unresolved: 0, total: 0 };
 
-  const headers = values[0].map(h => String(h).trim());
+  // 一律用標題名稱定位欄位：不管「學生姓名」被放在第幾欄、後面還有沒有空白欄
+  const headers = getRecordSheetHeaders(sheet);
   const nameIdx = headers.indexOf('學生姓名');
   const idIdx = headers.indexOf('個案編號');
   const recIdIdx = headers.indexOf('紀錄編號');
   if (nameIdx < 0 || idIdx < 0) return { filled: 0, unresolved: 0, total: 0 };
 
+  const data = sheet.getRange(2, 1, lastRow - 1, headers.length).getValues();
   const lookups = buildStudentNameLookups();
+  const nameColumn = [];
   let filled = 0;
   let unresolved = 0;
 
-  for (let i = 1; i < values.length; i++) {
-    const caseId = String(values[i][idIdx] || '').trim();
-    if (!caseId) continue;
-    if (String(values[i][nameIdx] || '').trim()) continue;
+  data.forEach(row => {
+    const caseId = String(row[idIdx] || '').trim();
+    const current = String(row[nameIdx] || '').trim();
 
-    const name = resolveStudentName({
-      '紀錄編號': recIdIdx >= 0 ? values[i][recIdIdx] : '',
-      '個案編號': caseId
-    }, lookups);
+    if (caseId && !current) {
+      const name = resolveStudentName({
+        '紀錄編號': recIdIdx >= 0 ? row[recIdIdx] : '',
+        '個案編號': caseId
+      }, lookups);
 
-    if (name) {
-      values[i][nameIdx] = name;
-      filled++;
-    } else {
-      unresolved++;
+      if (name) {
+        row[nameIdx] = name;
+        filled++;
+      } else {
+        unresolved++;
+      }
     }
-  }
+
+    nameColumn.push([row[nameIdx] === undefined ? '' : row[nameIdx]]);
+  });
 
   if (filled > 0) {
-    sheet.getRange(1, 1, values.length, headers.length).setValues(values);
+    // 只寫回「學生姓名」那一欄，不動其他欄位
+    sheet.getRange(2, nameIdx + 1, nameColumn.length, 1).setValues(nameColumn);
     delete _sheetCache[SHEET_RECORDS];
     CacheService.getScriptCache().remove('sheet_data_' + SHEET_RECORDS);
   }
 
-  return { filled, unresolved, total: values.length - 1 };
+  return { filled, unresolved, total: data.length };
 }
 
 /**
@@ -1793,8 +1835,7 @@ function handleAddRecord(data) {
   }
 
   const attachmentsStr = data.attachments ? JSON.stringify(data.attachments) : '[]';
-  const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0]
-    .map(h => String(h).trim());
+  const headers = getRecordSheetHeaders(sheet);
   const valuesByHeader = {
     '紀錄編號': id,
     '個案編號': data.caseId || '',
@@ -1847,8 +1888,7 @@ function handleUpdateRecord(data) {
   };
 
   // 🎯 效能優化：批次寫回整列
-  const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0]
-    .map(h => String(h).trim());
+  const headers = getRecordSheetHeaders(sheet);
   const rowDataArr = sheet.getRange(row, 1, 1, headers.length).getValues()[0];
 
   // 重新命名附件檔案 (先更名後再存入試算表，確保檔名一致)
