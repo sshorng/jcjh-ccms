@@ -1016,18 +1016,26 @@
                   <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
                     <h4 class="text-err" style="margin:0;"><i class="fas fa-ghost"></i> 孤兒紀錄 ({{
                       healthReport.orphans.length }} 筆)</h4>
-                    <span style="font-size:11px; color:var(--tx3);">定義：紀錄中存在的編號，在個案檔中找不到對應的人</span>
+                    <span style="font-size:11px; color:var(--tx3);">定義：紀錄的個案編號在個案檔中找不到人</span>
                   </div>
-                  <div style="max-height:160px; overflow-y:auto; font-size:13px; margin-bottom:10px;">
+                  <div style="max-height:180px; overflow-y:auto; font-size:13px; margin-bottom:10px;">
                     <div v-for="o in healthReport.orphans"
-                      style="padding:3px 0; border-bottom:1px solid var(--border);">
-                      [第 {{ o.row }} 列] 編號: {{ o.id }}（{{ o.date }}）
+                      style="padding:5px 0; border-bottom:1px solid var(--border); display:flex; justify-content:space-between; gap:10px; align-items:flex-start;">
+                      <div style="flex:1;">
+                        <span style="font-weight:600;" :class="{ 'text-err': !o.name }">{{ o.name || '（查無姓名）' }}</span>
+                        <span style="color:var(--tx2);">編號 {{ o.id }}</span>
+                        <span style="color:var(--tx3);">（{{ o.date }}｜第 {{ o.row }} 列）</span>
+                        <div v-if="o.recorder || o.summary" style="font-size:11px; color:var(--tx3); margin-top:2px;">
+                          {{ o.recorder }}<span v-if="o.recorder && o.summary">｜</span>{{ o.summary }}
+                        </div>
+                      </div>
+                      <button class="btn btn-sm" style="font-size:11px; padding:3px 10px; white-space:nowrap;"
+                        @click="openOrphanCase(o)"><i class="fas fa-user-plus"></i> 補登個案</button>
                     </div>
                   </div>
                   <div style="text-align:right;">
-                    <button class="btn btn-sm"
-                      style="background:var(--err); color:#fff; font-size:12px; padding:4px 12px;"
-                      @click="repairData('orphans')" :disabled="loading"><i class="fas fa-wrench"></i> 修復此項</button>
+                    <button class="btn btn-sm" style="font-size:12px; padding:4px 12px;" @click="backfillRecordNames()"
+                      :disabled="loading"><i class="fas fa-database"></i> 回填既有紀錄姓名</button>
                   </div>
                 </div>
 

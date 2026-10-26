@@ -759,6 +759,27 @@ createApp({
         this.runHealthCheck();
       }
     },
+    async backfillRecordNames() {
+      if (!confirm('💡 將替既有服務紀錄補上「學生姓名」\n來源：現有在案個案與歷屆畢業封存分頁。\n確認執行？')) return;
+
+      this.loading = true;
+      this.loadingMsg = '正在回填紀錄姓名...';
+      const r = await this.api('backfillRecordNames', {});
+      this.loading = false;
+
+      if (r?.success) {
+        this.showToast(r.message, 'success');
+        this.runHealthCheck();
+      }
+    },
+    openOrphanCase(orphan) {
+      this.showHealthModal = false;
+      this.healthDetail = null;
+      this.openCaseModal(null);
+      this.caseForm.id = (orphan && orphan.id) || '';
+      this.caseForm.name = (orphan && orphan.name) || '';
+      this.showToast('請補齊年級、班級、座號後儲存，這筆孤兒紀錄就會自動歸位。', 'info');
+    },
     async updateBackupSettings() {
       if (!this.backupSettings.email) {
         this.showToast('請填寫備份電子郵件', 'warning');
@@ -1329,8 +1350,25 @@ createApp({
     async deleteCase(id) {
       this.confirmAction('確定要刪除此個案？相關紀錄也會一併影響。', async () => {
         this.loading = true;
-        const r = await this.api('deleteCase', { id });
+        let r = await this.api('deleteCase', { id });
         this.loading = false;
+
+        // 🎯 孤兒防線：後端偵測到仍有服務紀錄時，改為第二段確認
+        if (r && !r.success && r.code === 'HAS_RECORDS') {
+          const ok = confirm(
+            `確定要連同 ${r.recordCount} 筆服務紀錄一起刪除嗎？\n\n` +
+            `按「確定」：個案與紀錄一併永久刪除，無法復原。\n` +
+            `按「取消」：先不刪，建議改用編輯功能把紀錄轉移到正確個案。`
+          );
+          if (!ok) {
+            this.showToast('已取消刪除，個案與紀錄均保留。', 'warning');
+            return;
+          }
+          this.loading = true;
+          r = await this.api('deleteCase', { id, force: true });
+          this.loading = false;
+        }
+
         if (r?.success) {
           this.showToast(r.message, 'success');
           await this.fetchData();

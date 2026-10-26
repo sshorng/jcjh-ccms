@@ -104,7 +104,7 @@ const HEADERS = {
   ],
   [SHEET_RECORDS]: [
     '紀錄編號', '個案編號', '日期時間', '時間', '對象', '方式', '輔導服務紀錄', '記錄者帳號',
-    '記錄者姓名', '服務項目', '建立日期', '附件檔案'
+    '記錄者姓名', '服務項目', '建立日期', '學生姓名', '附件檔案'
   ],
   [SHEET_CLASSES]: [
     '年級', '班級', '導師', '班輔', '專輔'
@@ -295,24 +295,229 @@ function generateId(prefix) {
 const _sheetCache = {};
 
 /**
- * 確保既有「服務紀錄」工作表具備可選填的「時間」欄位。
- * 舊表會把新欄位加在最右側，讀寫時再依標題對齊，避免資料錯欄。
+ * 確保「服務紀錄」具備指定欄位（一律加在最右側，讀寫靠標題對齊，不會造成錯欄）。
  */
-function ensureRecordTimeColumn() {
+function ensureRecordHeaderColumn(colName) {
   const ss = getSpreadsheet();
   const sheet = ss.getSheetByName(SHEET_RECORDS);
-  if (!sheet) return;
+  if (!sheet) return false;
 
   const lastColumn = sheet.getLastColumn();
   const headerWidth = Math.max(lastColumn, 1);
   const headers = sheet.getRange(1, 1, 1, headerWidth).getValues()[0]
     .map(h => String(h).trim());
-  if (headers.includes('時間')) return;
+  if (headers.includes(colName)) return false;
 
   const targetColumn = lastColumn > 0 && headers.some(Boolean) ? lastColumn + 1 : 1;
-  sheet.getRange(1, targetColumn).setValue('時間').setFontWeight('bold');
+  sheet.getRange(1, targetColumn).setValue(colName).setFontWeight('bold');
   delete _sheetCache[SHEET_RECORDS];
   CacheService.getScriptCache().remove('sheet_data_' + SHEET_RECORDS);
+  return true;
+}
+
+/**
+ * 確保既有「服務紀錄」工作表具備「時間」與「學生姓名」欄位。
+ * 「學生姓名」是治本欄位：個案日後改名、改編號或被刪除，紀錄仍能認出是誰。
+ */
+function ensureRecordTimeColumn() {
+  ensureRecordHeaderColumn('時間');
+  ensureRecordHeaderColumn('學生姓名');
+}
+
+/**
+ * 個案編號正規化：去空白、全形轉半形、去連字號、轉大寫。
+ * 讓 114-0118、1140118、全形數字混連字號這類同義寫法可以互相比對。
+ */
+function normalizeCaseId(value) {
+  if (value === null || value === undefined) return '';
+  return String(value)
+    .replace(/[\s\u3000]/g, '')
+    .replace(/[０-９Ａ-Ｚａ-ｚ]/g, ch => String.fromCharCode(ch.charCodeAt(0) - 0xFEE0))
+    .replace(/-/g, '')
+    .toUpperCase();
+}
+
+/**
+ * 取得個案編號對應的學生姓名（僅查現有在案個案）。
+ */
+function getStudentNameByCaseId(caseId) {
+  const key = normalizeCaseId(caseId);
+  if (!key) return '';
+  const hit = getSheetData(SHEET_CASES).find(c => normalizeCaseId(c['個案編號']) === key);
+  return hit ? String(hit['姓名'] || '').trim() : '';
+}
+
+/**
+ * 建立姓名對照表：現有在案個案加上歷屆畢業封存分頁。
+ * byCaseId 以正規化編號為鍵，byRecordId 以紀錄編號為鍵。
+ */
+function buildStudentNameLookups() {
+  const ss = getSpreadsheet();
+  const byCaseId = {};
+  const byRecordId = {};
+
+  getSheetData(SHEET_CASES).forEach(c => {
+    const key = normalizeCaseId(c['個案編號']);
+    const name = String(c['姓名'] || '').trim();
+    if (key && name) byCaseId[key] = name;
+  });
+
+  ss.getSheets().forEach(sheet => {
+    const sheetName = sheet.getName();
+    const isArchivedCases = sheetName.endsWith('畢業-個案');
+    const isArchivedRecords = sheetName.endsWith('畢業-服務');
+    if (!isArchivedCases && !isArchivedRecords) return;
+
+    try {
+      const values = sheet.getDataRange().getValues();
+      if (values.length < 2) return;
+
+      const headers = values[0].map(h => String(h).trim());
+      const idIdx = headers.indexOf('個案編號');
+      const nameIdx = headers.indexOf(isArchivedRecords ? '學生姓名' : '姓名');
+      const recIdIdx = headers.indexOf('紀錄編號');
+      if (idIdx < 0 || nameIdx < 0) return;
+
+      for (let i = 1; i < values.length; i++) {
+        const name = String(values[i][nameIdx] || '').trim();
+        if (!name) continue;
+
+        const key = normalizeCaseId(values[i][idIdx]);
+        if (key && !byCaseId[key]) byCaseId[key] = name;
+
+        if (recIdIdx >= 0) {
+          const recId = String(values[i][recIdIdx] || '').trim();
+          if (recId && !byRecordId[recId]) byRecordId[recId] = name;
+        }
+      }
+    } catch (e) {
+      console.warn('讀取歷史分頁失敗：' + sheetName, e);
+    }
+  });
+
+  return { byCaseId, byRecordId };
+}
+
+/**
+ * 解析單筆紀錄的學生姓名：先看紀錄自身欄位，其次查對照表。
+ */
+function resolveStudentName(record, lookups) {
+  const own = String(record['學生姓名'] || '').trim();
+  if (own) return own;
+
+  const maps = lookups || { byCaseId: {}, byRecordId: {} };
+  const recId = String(record['紀錄編號'] || '').trim();
+  if (recId && maps.byRecordId[recId]) return maps.byRecordId[recId];
+
+  const key = normalizeCaseId(record['個案編號']);
+  if (key && maps.byCaseId[key]) return maps.byCaseId[key];
+  return '';
+}
+
+/**
+ * 把指定個案的姓名補寫進其服務紀錄（用於補登個案、救回孤兒紀錄）。
+ */
+function syncRecordStudentName(caseId, name) {
+  const key = normalizeCaseId(caseId);
+  const studentName = String(name || '').trim();
+  if (!key || !studentName) return 0;
+
+  ensureRecordHeaderColumn('學生姓名');
+  const sheet = getSpreadsheet().getSheetByName(SHEET_RECORDS);
+  if (!sheet) return 0;
+
+  const values = sheet.getDataRange().getValues();
+  if (values.length < 2) return 0;
+
+  const headers = values[0].map(h => String(h).trim());
+  const idIdx = headers.indexOf('個案編號');
+  const nameIdx = headers.indexOf('學生姓名');
+  if (idIdx < 0 || nameIdx < 0) return 0;
+
+  let changed = 0;
+  for (let i = 1; i < values.length; i++) {
+    if (normalizeCaseId(values[i][idIdx]) !== key) continue;
+    if (String(values[i][nameIdx] || '').trim()) continue;
+    values[i][nameIdx] = studentName;
+    changed++;
+  }
+
+  if (changed > 0) {
+    sheet.getRange(1, 1, values.length, headers.length).setValues(values);
+    delete _sheetCache[SHEET_RECORDS];
+    CacheService.getScriptCache().remove('sheet_data_' + SHEET_RECORDS);
+  }
+  return changed;
+}
+
+/**
+ * 回填既有服務紀錄的「學生姓名」。
+ * 來源一：現有在案個案（含編號正規化比對）
+ * 來源二：歷屆畢業封存分頁的姓名欄位
+ */
+function backfillRecordStudentNames() {
+  ensureRecordTimeColumn();
+  const sheet = getSpreadsheet().getSheetByName(SHEET_RECORDS);
+  if (!sheet) return { filled: 0, unresolved: 0, total: 0 };
+
+  const values = sheet.getDataRange().getValues();
+  if (values.length < 2) return { filled: 0, unresolved: 0, total: 0 };
+
+  const headers = values[0].map(h => String(h).trim());
+  const nameIdx = headers.indexOf('學生姓名');
+  const idIdx = headers.indexOf('個案編號');
+  const recIdIdx = headers.indexOf('紀錄編號');
+  if (nameIdx < 0 || idIdx < 0) return { filled: 0, unresolved: 0, total: 0 };
+
+  const lookups = buildStudentNameLookups();
+  let filled = 0;
+  let unresolved = 0;
+
+  for (let i = 1; i < values.length; i++) {
+    const caseId = String(values[i][idIdx] || '').trim();
+    if (!caseId) continue;
+    if (String(values[i][nameIdx] || '').trim()) continue;
+
+    const name = resolveStudentName({
+      '紀錄編號': recIdIdx >= 0 ? values[i][recIdIdx] : '',
+      '個案編號': caseId
+    }, lookups);
+
+    if (name) {
+      values[i][nameIdx] = name;
+      filled++;
+    } else {
+      unresolved++;
+    }
+  }
+
+  if (filled > 0) {
+    sheet.getRange(1, 1, values.length, headers.length).setValues(values);
+    delete _sheetCache[SHEET_RECORDS];
+    CacheService.getScriptCache().remove('sheet_data_' + SHEET_RECORDS);
+  }
+
+  return { filled, unresolved, total: values.length - 1 };
+}
+
+/**
+ * 管理員 API：回填服務紀錄的學生姓名
+ */
+function handleBackfillRecordNames(data) {
+  if (!checkAdminRole(data.role)) return { success: false, error: '權限不足，僅限管理員執行' };
+
+  const result = backfillRecordStudentNames();
+  let message;
+  if (result.filled > 0) {
+    message = '已回填 ' + result.filled + ' 筆紀錄的學生姓名。';
+    if (result.unresolved > 0) message += '另有 ' + result.unresolved + ' 筆查無姓名，需人工補登個案。';
+  } else if (result.unresolved > 0) {
+    message = '沒有可自動回填的紀錄，' + result.unresolved + ' 筆查無姓名，需人工補登個案。';
+  } else {
+    message = '所有紀錄都已有學生姓名，無需回填。';
+  }
+
+  return { success: true, message, filled: result.filled, unresolved: result.unresolved, total: result.total };
 }
 
 function getSheetData(sheetName, force = false) {
@@ -748,6 +953,9 @@ function handleRequest(e) {
         break;
       case 'checkIntegrity':
         result = handleCheckIntegrity(data);
+        break;
+      case 'backfillRecordNames':
+        result = handleBackfillRecordNames(data);
         break;
 
       // --- 統計與特殊功能 ---
@@ -1217,6 +1425,9 @@ function handleAddCase(data) {
   // 最終寫入
   sheet.appendRow(rowDataArr);
 
+  // 🎯 治本：補登個案（例如救回孤兒紀錄）時，順便補上既有紀錄的學生姓名
+  syncRecordStudentName(finalId, data.name || '');
+
   CacheService.getScriptCache().remove('sheet_data_' + SHEET_CASES);
 
   return { success: true, message: '個案建立成功', id: finalId };
@@ -1354,10 +1565,52 @@ function handleDeleteCase(data) {
 
   const ss = getSpreadsheet();
   const sheet = ss.getSheetByName(SHEET_CASES);
+  const caseKey = normalizeCaseId(caseItem['個案編號']);
+  const studentName = String(caseItem['姓名'] || '').trim();
+
+  // 🎯 孤兒防線：先確認這個個案底下還有沒有服務紀錄
+  const records = getSheetData(SHEET_RECORDS, true) || [];
+  const related = caseKey ? records.filter(r => normalizeCaseId(r['個案編號']) === caseKey) : [];
+
+  if (related.length > 0 && !data.force) {
+    return {
+      success: false,
+      code: 'HAS_RECORDS',
+      recordCount: related.length,
+      name: studentName,
+      error: `《${studentName || caseItem['個案編號']}》還有 ${related.length} 筆服務紀錄，硬刪除個案會讓這些紀錄變成孤兒。`
+    };
+  }
+
+  // 硬刪除：先刪紀錄（列號由大到小，避免刪錯列），再刪個案
+  let deletedRecords = 0;
+  if (related.length > 0) {
+    const recordSheet = ss.getSheetByName(SHEET_RECORDS);
+    related.slice().sort((a, b) => b._rowIndex - a._rowIndex).forEach(r => {
+      try {
+        const attsRaw = r['附件檔案'];
+        if (attsRaw) {
+          JSON.parse(attsRaw).forEach(att => {
+            try { DriveApp.getFileById(att.fileId).setTrashed(true); } catch (e) {}
+          });
+        }
+      } catch (e) {}
+      recordSheet.deleteRow(r._rowIndex);
+      deletedRecords++;
+    });
+    delete _sheetCache[SHEET_RECORDS];
+    CacheService.getScriptCache().remove('sheet_data_' + SHEET_RECORDS);
+  }
+
   sheet.deleteRow(caseItem._rowIndex);
   CacheService.getScriptCache().remove('sheet_data_' + SHEET_CASES);
 
-  return { success: true, message: '個案已刪除' };
+  return {
+    success: true,
+    message: deletedRecords > 0
+      ? `個案已刪除，並一併刪除 ${deletedRecords} 筆服務紀錄。`
+      : '個案已刪除'
+  };
 }
 
 /**
@@ -1554,6 +1807,7 @@ function handleAddRecord(data) {
     '記錄者姓名': data.recorderName || '',
     '服務項目': data.service || '',
     '建立日期': now,
+    '學生姓名': getStudentNameByCaseId(data.caseId),
     '附件檔案': attachmentsStr
   };
   const rowData = headers.map(header => Object.prototype.hasOwnProperty.call(valuesByHeader, header)
@@ -1625,6 +1879,13 @@ function handleUpdateRecord(data) {
         rowDataArr[colIdx] = val;
       }
     }
+  }
+
+  // 🎯 治本：每次儲存都同步學生姓名快照，個案日後改名或被刪除都還能回溯
+  const studentNameIdx = headers.indexOf('學生姓名');
+  if (studentNameIdx >= 0) {
+    const snapshot = getStudentNameByCaseId(record['個案編號']);
+    if (snapshot) rowDataArr[studentNameIdx] = snapshot;
   }
 
   sheet.getRange(row, 1, 1, headers.length).setValues([rowDataArr]);
@@ -2041,8 +2302,11 @@ function handleCheckIntegrity(data) {
     return { success: false, error: '權限不足，僅限管理員執行健檢' };
   }
 
+  ensureRecordTimeColumn();
+
   const cases = getSheetData(SHEET_CASES);
   const records = getSheetData(SHEET_RECORDS);
+  const nameLookups = buildStudentNameLookups();
   
   const report = {
     orphans: [],      // 資料孤兒 (紀錄找不到個案)
@@ -2072,14 +2336,15 @@ function handleCheckIntegrity(data) {
       report.invalidIds.push({ id, name: c['姓名'], row: idx + 2 });
     }
 
-    // 檢查重複編號
-    if (caseIds.has(id)) {
-      if (!duplicateSet.has(id)) {
+    // 檢查重複編號 (以正規化編號比對，114-0118 與 1140118 視為同一個)
+    const normId = normalizeCaseId(id);
+    if (caseIds.has(normId)) {
+      if (!duplicateSet.has(normId)) {
         report.duplicates.push({ id, name: c['姓名'] });
-        duplicateSet.add(id);
+        duplicateSet.add(normId);
       }
     } else {
-      caseIds.add(id);
+      caseIds.add(normId);
     }
 
     // 檢查關鍵欄位 (姓名、年級、班級)
@@ -2096,9 +2361,16 @@ function handleCheckIntegrity(data) {
       return;
     }
 
-    // 檢查資料孤兒 (紀錄表中存在的 ID 在個案表中找不到)
-    if (!caseIds.has(id)) {
-      report.orphans.push({ id, date: r['日期時間'] || '(未填)', row: idx + 2 });
+    // 檢查資料孤兒：改用正規化編號比對，避免連字號或全形數字造成假孤兒
+    if (!caseIds.has(normalizeCaseId(id))) {
+      report.orphans.push({
+        id,
+        date: r['日期時間'] || '(未填)',
+        row: idx + 2,
+        name: resolveStudentName(r, nameLookups),
+        recorder: String(r['記錄者姓名'] || '').trim(),
+        summary: String(r['輔導服務紀錄'] || '').replace(/\s+/g, ' ').slice(0, 40)
+      });
     }
 
     // 🎯 邏輯檢查：僅針對 2026/4/1 以後的紀錄
@@ -2130,6 +2402,9 @@ function handleCheckIntegrity(data) {
       }
     }
   });
+
+  // 孤兒中仍查無姓名的筆數，方便前端提示需要人工補登
+  report.orphanNameMissing = report.orphans.filter(o => !o.name).length;
 
   // 3. 檢查孤兒附件 (雲端硬碟中有，但試算表中沒紀錄)
   const usedFileIds = new Set();
