@@ -20,6 +20,17 @@
   --r2: 10px;
   --sh: 0 8px 30px rgba(0, 0, 0, .15);
   --sidebar-w: 260px;
+
+  /* ===== 相容別名：讓舊有 inline style 使用的變數名稱一併生效 ===== */
+  --pri: var(--p);
+  --suc: var(--ok);
+  --border: var(--bd);
+  --bg-card: var(--sf);
+  --p-rgb: var(--p-alpha);
+  --txt: var(--tx);
+  --text-mut: var(--tx2);
+  --text-muted: var(--tx3);
+  --err-alpha: 231, 111, 81;
 }
 
 /* ===== 鈭株銝駁?閬? ===== */
@@ -34,6 +45,16 @@ body.light-theme {
   --tx3: #9b8f84;
   --sh: 0 4px 15px rgba(130, 110, 90, 0.08);
   --p: #d36b46; --ph: #bd5936; --pl: #e5896a; --p-alpha: 211, 107, 70;
+  --p: #d36b46; --ph: #bd5936; --pl: #e5896a; --p-alpha: 211, 107, 70;
+
+  /* 淺色主題同步更新相容別名，避免文字與邊框沿用深色值 */
+  --pri: var(--p);
+  --border: var(--bd);
+  --bg-card: var(--sf);
+  --p-rgb: var(--p-alpha);
+  --txt: var(--tx);
+  --text-mut: var(--tx2);
+  --text-muted: var(--tx3);
 }
 
 .light-theme .login-bg {

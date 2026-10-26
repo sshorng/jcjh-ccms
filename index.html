@@ -1013,29 +1013,32 @@
                 <!-- 孤兒紀錄 -->
                 <div v-if="healthDetail === 'orphans' && healthReport.orphans.length > 0" class="report-section"
                   style="margin-bottom:10px; border:1px solid var(--border); border-radius:8px; padding:12px;">
-                  <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
-                    <h4 class="text-err" style="margin:0;"><i class="fas fa-ghost"></i> 孤兒紀錄 ({{
+                  <div style="display:flex; flex-wrap:wrap; align-items:baseline; gap:4px 10px; margin-bottom:8px;">
+                    <h4 class="text-err" style="margin:0; white-space:nowrap;"><i class="fas fa-ghost"></i> 孤兒紀錄 ({{
                       healthReport.orphans.length }} 筆)</h4>
                     <span style="font-size:11px; color:var(--tx3);">定義：紀錄的個案編號在個案檔中找不到人</span>
                   </div>
-                  <div style="max-height:180px; overflow-y:auto; font-size:13px; margin-bottom:10px;">
+                  <div style="max-height:240px; overflow-y:auto; font-size:13px; margin-bottom:10px;">
                     <div v-for="o in healthReport.orphans"
-                      style="padding:5px 0; border-bottom:1px solid var(--border); display:flex; justify-content:space-between; gap:10px; align-items:flex-start;">
-                      <div style="flex:1;">
-                        <span style="font-weight:600;" :class="{ 'text-err': !o.name }">{{ o.name || '（查無姓名）' }}</span>
-                        <span style="color:var(--tx2);">編號 {{ o.id }}</span>
-                        <span style="color:var(--tx3);">（{{ o.date }}｜第 {{ o.row }} 列）</span>
-                        <div v-if="o.recorder || o.summary" style="font-size:11px; color:var(--tx3); margin-top:2px;">
-                          {{ o.recorder }}<span v-if="o.recorder && o.summary">｜</span>{{ o.summary }}
+                      style="padding:6px 0; border-bottom:1px solid var(--border); display:flex; flex-wrap:wrap; justify-content:space-between; gap:6px 10px; align-items:center;">
+                      <div style="flex:1 1 180px; min-width:0;">
+                        <div>
+                          <span style="font-weight:600; font-size:13px;" :class="{ 'text-err': !o.name }">{{ o.name || '（查無姓名）' }}</span>
+                          <span style="font-size:12px; color:var(--tx2); margin-left:6px;">{{ o.id }}</span>
+                        </div>
+                        <div style="font-size:11px; color:var(--tx3); margin-top:2px;">
+                          {{ o.date }}｜第 {{ o.row }} 列<span v-if="o.recorder">｜{{ o.recorder }}</span><span v-if="o.summary">｜{{ o.summary }}</span>
                         </div>
                       </div>
-                      <button class="btn btn-sm" style="font-size:11px; padding:3px 10px; white-space:nowrap;"
+                      <button class="btn btn-sm btn-primary"
+                        style="font-size:12px; padding:5px 12px; white-space:nowrap; flex-shrink:0;"
                         @click="openOrphanCase(o)"><i class="fas fa-user-plus"></i> 補登個案</button>
                     </div>
                   </div>
                   <div style="text-align:right;">
-                    <button class="btn btn-sm" style="font-size:12px; padding:4px 12px;" @click="backfillRecordNames()"
-                      :disabled="loading"><i class="fas fa-database"></i> 回填既有紀錄姓名</button>
+                    <button class="btn btn-sm btn-outline" style="font-size:12px; padding:4px 12px;"
+                      @click="backfillRecordNames()" :disabled="loading"><i class="fas fa-database"></i>
+                      回填既有紀錄姓名</button>
                   </div>
                 </div>
 
