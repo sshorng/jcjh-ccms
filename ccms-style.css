@@ -2422,3 +2422,21 @@ mark {
     font-size: 18px;
   }
 }
+
+/* 改掛目標：輸入篩選清單 */
+.relink-option {
+  padding: 6px 10px;
+  cursor: pointer;
+  font-size: 12px;
+  line-height: 1.5;
+  border-bottom: 1px solid var(--bd);
+}
+
+.relink-option:last-child {
+  border-bottom: none;
+}
+
+.relink-option:hover,
+.relink-option:active {
+  background: var(--sf2);
+}

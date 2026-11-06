@@ -22,7 +22,7 @@ const SHEET_CASES = '優先關懷個案';
 const SHEET_RECORDS = '服務紀錄';
 const SHEET_CLASSES = '班級設定';
 const SHEET_SETTINGS = '系統設定';
-const APP_VERSION = '20261106a';
+const APP_VERSION = '20261106b';
 
 // ============ 工作階段 (Session) 設定 ============
 const SESSION_DURATION = 21600; // 6 小時（CacheService 上限）

@@ -5,7 +5,7 @@
 
 // ========== GAS URL 設定 ==========
 // 若要固定網址，請在此填入已部署的 GAS Web App URL
-const APP_VERSION = '20261106a';
+const APP_VERSION = '20261106b';
 const DEFAULT_SCHOOL_NAME = '臺北市立建成國民中學';
 const DEFAULT_SCHOOL_SHORT = '建成國中';
 const DEFAULT_SCHOOL_ABBR = 'JCJH';
@@ -101,7 +101,9 @@ createApp({
       backupGrade: '全部',
       selectedCaseIds: [], // 用於批次操作勾選
       recordDrafts: {}, // 🎨 新增案例草稿暫存
-      relinkTargetId: '', // 🔗 孤兒紀錄改掛時選擇的目標個案
+      relinkTargetId: '', // 🔗 孤兒紀錄改掛時已選定的目標個案編號
+      relinkQuery: '', // 改掛目標的輸入篩選字串
+      relinkListOpen: false, // 改掛目標篩選清單是否展開
       todoNote: '', // 📌 待辦隨手記事本
       isPrivacyMode: localStorage.getItem('cms_privacy_mode') === 'true', // 🔒 隱私遮罩模式
       // 配置與設定分頁
@@ -152,6 +154,17 @@ createApp({
         : '目前使用貴校自己的資料庫';
     },
     isAdmin() { return this.user && this.user.role === '管理員'; },
+    // 🔗 改掛目標：輸入即時篩選（編號或姓名都可比對，連字號可有可無）
+    relinkMatches() {
+      const q = String(this.relinkQuery || '').trim().toLowerCase();
+      if (!q) return [];
+      const qNoDash = q.replace(/[-\s]/g, '');
+      return (this.cases || []).filter(c => {
+        const id = String(c.id || '').toLowerCase();
+        const name = String(c.name || '').toLowerCase();
+        return name.includes(q) || id.includes(q) || (qNoDash && id.replace(/-/g, '').includes(qNoDash));
+      }).slice(0, 8);
+    },
     // 主題 CSS 統一綁定
     themeClass() { return this.theme === 'light' ? 'light-theme' : ''; },
     filteredCases() {
@@ -800,11 +813,34 @@ createApp({
         }
       );
     },
+    // 🔗 改掛目標的輸入篩選互動
+    onRelinkInput() {
+      // 一旦改動輸入，先前的選定就不算數，避免改了字還掛到舊目標
+      this.relinkTargetId = '';
+      this.relinkListOpen = true;
+    },
+    openRelinkList() {
+      this.relinkListOpen = true;
+    },
+    closeRelinkList() {
+      this.relinkListOpen = false;
+    },
+    pickRelinkTarget(c) {
+      if (!c || !c.id) return;
+      this.relinkTargetId = String(c.id);
+      this.relinkQuery = `${c.id}｜${c.name || '（無姓名）'}`;
+      this.relinkListOpen = false;
+    },
+    clearRelinkTarget() {
+      this.relinkTargetId = '';
+      this.relinkQuery = '';
+      this.relinkListOpen = false;
+    },
     relinkOrphanRecord(orphan) {
       if (!orphan || !orphan.id) return;
       const targetId = String(this.relinkTargetId || '').trim();
       if (!targetId) {
-        this.showToast('請先在上方選擇要改掛的個案', 'warning');
+        this.showToast('請先在上方輸入並選定要改掛的個案', 'warning');
         return;
       }
       const target = this.cases.find(c => String(c.id) === targetId);
@@ -822,7 +858,7 @@ createApp({
           this.loading = false;
           if (r?.success) {
             this.showToast(r.message, 'success');
-            this.relinkTargetId = '';
+              this.clearRelinkTarget();
             this.runHealthCheck();
           }
         }

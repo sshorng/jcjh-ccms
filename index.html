@@ -11,7 +11,7 @@
   <meta name="description" content="國中輔導個案管理系統 - 優先關懷個案名單與晤談紀錄管理">
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@300;400;500;700&display=swap" rel="stylesheet">
   <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" rel="stylesheet">
-  <link rel="stylesheet" href="ccms-style.css?v=20261106a">
+  <link rel="stylesheet" href="ccms-style.css?v=20261106b">
 </head>
 
 <body>
@@ -1018,14 +1018,37 @@
                       healthReport.orphans.length }} 筆)</h4>
                     <span style="font-size:11px; color:var(--tx3);">定義：紀錄的個案編號在個案檔中找不到人</span>
                   </div>
-                  <div style="display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin-bottom:8px; font-size:12px;">
-                    <span style="color:var(--tx2);"><i class="fas fa-link"></i> 改掛目標</span>
-                    <select v-model="relinkTargetId" class="input"
-                      style="max-width:320px; font-size:12px; padding:4px 8px;">
-                      <option value="">（請先選擇現有個案）</option>
-                      <option v-for="c in cases" :key="c.id" :value="String(c.id)">{{ c.id }}｜{{ c.name }}</option>
-                    </select>
-                    <span style="font-size:11px; color:var(--tx3);">選好目標後，按該筆的「改掛」把舊編號的紀錄整批搬過去</span>
+                  <div style="display:flex; flex-wrap:wrap; align-items:flex-start; gap:8px 10px; margin-bottom:8px; font-size:12px;">
+                    <span style="color:var(--tx2); padding-top:6px; white-space:nowrap;"><i class="fas fa-link"></i> 改掛目標</span>
+                    <div style="position:relative; flex:1 1 240px; max-width:340px;">
+                      <div style="display:flex; align-items:center; gap:4px;">
+                        <input class="input" type="text" v-model="relinkQuery" autocomplete="off"
+                          placeholder="輸入編號或姓名篩選，例：王小明、114-0118"
+                          style="width:100%; font-size:12px; padding:5px 8px;"
+                          @input="onRelinkInput" @focus="openRelinkList" @blur="closeRelinkList"
+                          @keydown.esc="closeRelinkList">
+                        <button v-if="relinkQuery" type="button" class="btn btn-sm btn-outline"
+                          style="padding:3px 8px; font-size:12px; white-space:nowrap;"
+                          @mousedown.prevent="clearRelinkTarget" title="清除"><i class="fas fa-times"></i></button>
+                      </div>
+                      <div v-if="relinkListOpen && relinkQuery && relinkMatches.length"
+                        style="position:absolute; z-index:30; left:0; right:0; top:100%; margin-top:2px; background:var(--sf); border:1px solid var(--bd); border-radius:var(--r2); box-shadow:var(--sh); max-height:200px; overflow-y:auto;">
+                        <div v-for="c in relinkMatches" :key="c.id" class="relink-option"
+                          @mousedown.prevent="pickRelinkTarget(c)">
+                          <span style="font-weight:600;">{{ c.name || '（無姓名）' }}</span>
+                          <span style="color:var(--tx2); margin-left:6px;">{{ c.id }}</span>
+                          <span style="color:var(--tx3); margin-left:6px;">{{ c.grade }}{{ c.class }}<template v-if="c.seatNo">／{{ c.seatNo }}號</template></span>
+                        </div>
+                      </div>
+                      <div v-else-if="relinkListOpen && relinkQuery"
+                        style="position:absolute; z-index:30; left:0; right:0; top:100%; margin-top:2px; background:var(--sf); border:1px solid var(--bd); border-radius:var(--r2); box-shadow:var(--sh); padding:8px 10px; font-size:12px; color:var(--tx3);">
+                        查無符合的個案，試試姓名或編號的片段。
+                      </div>
+                    </div>
+                    <span v-if="relinkTargetId" style="padding-top:6px; color:var(--pri); font-weight:600; white-space:nowrap;">
+                      <i class="fas fa-check-circle"></i> 已選 {{ relinkTargetId }}
+                    </span>
+                    <span style="font-size:11px; color:var(--tx3); flex:1 1 100%;">輸入關鍵字即時篩選，點選個案後按該筆孤兒紀錄的「改掛」，把該舊編號底下的紀錄整批搬過去</span>
                   </div>
                   <div style="max-height:240px; overflow-y:auto; font-size:13px; margin-bottom:10px;">
                     <div v-for="o in healthReport.orphans"
@@ -1747,6 +1770,6 @@
   <script defer src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
   <script defer src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
   <script defer src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.3.0/exceljs.min.js"></script>
-<script src="ccms-app.js?v=20261106a"></script>
+<script src="ccms-app.js?v=20261106b"></script>
 
 </html>
