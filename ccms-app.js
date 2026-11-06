@@ -5,7 +5,7 @@
 
 // ========== GAS URL 設定 ==========
 // 若要固定網址，請在此填入已部署的 GAS Web App URL
-const APP_VERSION = '20261015h';
+const APP_VERSION = '20261106a';
 const DEFAULT_SCHOOL_NAME = '臺北市立建成國民中學';
 const DEFAULT_SCHOOL_SHORT = '建成國中';
 const DEFAULT_SCHOOL_ABBR = 'JCJH';
@@ -101,6 +101,7 @@ createApp({
       backupGrade: '全部',
       selectedCaseIds: [], // 用於批次操作勾選
       recordDrafts: {}, // 🎨 新增案例草稿暫存
+      relinkTargetId: '', // 🔗 孤兒紀錄改掛時選擇的目標個案
       todoNote: '', // 📌 待辦隨手記事本
       isPrivacyMode: localStorage.getItem('cms_privacy_mode') === 'true', // 🔒 隱私遮罩模式
       // 配置與設定分頁
@@ -799,6 +800,34 @@ createApp({
         }
       );
     },
+    relinkOrphanRecord(orphan) {
+      if (!orphan || !orphan.id) return;
+      const targetId = String(this.relinkTargetId || '').trim();
+      if (!targetId) {
+        this.showToast('請先在上方選擇要改掛的個案', 'warning');
+        return;
+      }
+      const target = this.cases.find(c => String(c.id) === targetId);
+      if (!target) {
+        this.showToast('找不到該目標個案，請重新選擇', 'error');
+        return;
+      }
+      const who = orphan.name ? `${orphan.name}（${orphan.id}）` : orphan.id;
+      this.confirmAction(
+        `確定要把編號 ${orphan.id} 的服務紀錄改掛到《${target.name || target.id}》（${target.id}）嗎？\n${who}｜${orphan.date}\n此編號底下的所有紀錄都會一起改掛。`,
+        async () => {
+          this.loading = true;
+          this.loadingMsg = '正在改掛服務紀錄...';
+          const r = await this.api('relinkRecords', { fromId: orphan.id, toId: target.id });
+          this.loading = false;
+          if (r?.success) {
+            this.showToast(r.message, 'success');
+            this.relinkTargetId = '';
+            this.runHealthCheck();
+          }
+        }
+      );
+    },
     async updateBackupSettings() {
       if (!this.backupSettings.email) {
         this.showToast('請填寫備份電子郵件', 'warning');
@@ -1173,6 +1202,7 @@ createApp({
       }
     },
     async saveCaseForm() {
+      const oldCaseId = String(this.editingId || '').trim();
       // 統一格式修補：如果輸出的編號是 1140118 (7碼)，自動轉為 114-0118
       if (/^\d{7}$/.test(this.caseForm.id)) {
         this.caseForm.id = this.caseForm.id.slice(0, 3) + '-' + this.caseForm.id.slice(3);
@@ -1267,13 +1297,39 @@ createApp({
         this.showToast(r.message, 'success');
         this.showCaseModal = false;
 
-        // 🎯 移除草稿清除邏輯 (已不使用草稿)
+        const newCaseId = String(this.caseForm.id || r.id || '').trim();
+        const idChanged = !!(oldCaseId && newCaseId && newCaseId !== oldCaseId);
 
         await this.fetchData();
+
+        // 改過編號時，本機的紀錄快取與草稿一起搬到新編號，避免舊資料殘留或看起來消失
+        if (idChanged) {
+          try {
+            localStorage.removeItem(`cms_records_${oldCaseId}`);
+            const draft = this.recordDrafts[oldCaseId];
+            if (draft) {
+              this.recordDrafts[newCaseId] = draft;
+              delete this.recordDrafts[oldCaseId];
+              localStorage.setItem('cms_record_drafts', JSON.stringify(this.recordDrafts));
+            }
+          } catch (e) { }
+          this.editingId = newCaseId;
+        }
+
         // 如果正在詳情頁，同步更新詳情個案資訊
         if (this.page === 'detail' && this.currentCase) {
-          const updated = this.cases.find(c => c.id === this.currentCase.id);
-          if (updated) this.currentCase = updated;
+          const targetId = idChanged ? newCaseId : this.currentCase.id;
+          const updated = this.cases.find(c => String(c.id) === String(targetId));
+          if (updated) {
+            this.currentCase = updated;
+            if (idChanged) {
+              const rr = await this.api('getRecords', { caseId: updated.id });
+              if (rr?.success) {
+                this.records = rr.data;
+                localStorage.setItem(`cms_records_${updated.id}`, JSON.stringify(rr.data));
+              }
+            }
+          }
         }
       }
     },

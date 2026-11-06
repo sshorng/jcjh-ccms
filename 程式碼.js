@@ -22,7 +22,7 @@ const SHEET_CASES = '優先關懷個案';
 const SHEET_RECORDS = '服務紀錄';
 const SHEET_CLASSES = '班級設定';
 const SHEET_SETTINGS = '系統設定';
-const APP_VERSION = '20261015h';
+const APP_VERSION = '20261106a';
 
 // ============ 工作階段 (Session) 設定 ============
 const SESSION_DURATION = 21600; // 6 小時（CacheService 上限）
@@ -562,6 +562,96 @@ function handleBackfillRecordNames(data) {
   return { success: true, message, filled: result.filled, unresolved: result.unresolved, total: result.total };
 }
 
+/**
+ * 個案改編號（或改名）時，連動改寫「服務紀錄」。
+ * 1. 個案編號一律用正規化比對：114-0118、1140118、全形數字、多餘空白都視為同一個人，
+ *    避免舊資料格式不一時對不上，紀錄留在舊編號，看起來就像整批消失。
+ * 2. 只回寫「個案編號」與「學生姓名」兩欄，不動其他欄位與格式。
+ * 回傳 { records, names }：改到編號的筆數、補／改到姓名的筆數。
+ */
+function renameRecordsCaseId(oldId, newId, studentName) {
+  const oldKey = normalizeCaseId(oldId);
+  const nextId = String(newId == null ? '' : newId).trim();
+  const empty = { records: 0, names: 0 };
+  if (!oldKey || !nextId) return empty;
+
+  const sheet = getSpreadsheet().getSheetByName(SHEET_RECORDS);
+  if (!sheet) return empty;
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 2) return empty;
+
+  const headers = getRecordSheetHeaders(sheet);
+  const idIdx = headers.indexOf('個案編號');
+  const nameIdx = headers.indexOf('學生姓名');
+  if (idIdx < 0) return empty;
+
+  const rows = sheet.getRange(2, 1, lastRow - 1, headers.length).getValues();
+  const wantedName = String(studentName || '').trim();
+  let records = 0;
+  let names = 0;
+
+  rows.forEach(row => {
+    if (normalizeCaseId(row[idIdx]) !== oldKey) return;
+
+    const rawId = row[idIdx] == null ? '' : row[idIdx];
+    if (String(rawId).trim() !== nextId) {
+      row[idIdx] = nextId;
+      records++;
+    }
+
+    if (nameIdx >= 0 && wantedName) {
+      const currentName = String(row[nameIdx] == null ? '' : row[nameIdx]).trim();
+      if (currentName !== wantedName) {
+        row[nameIdx] = wantedName;
+        names++;
+      }
+    }
+  });
+
+  if (records > 0) {
+    sheet.getRange(2, idIdx + 1, rows.length, 1).setValues(rows.map(row => [row[idIdx] == null ? '' : row[idIdx]]));
+  }
+  if (names > 0) {
+    sheet.getRange(2, nameIdx + 1, rows.length, 1).setValues(rows.map(row => [row[nameIdx] == null ? '' : row[nameIdx]]));
+  }
+  if (records > 0 || names > 0) {
+    delete _sheetCache[SHEET_RECORDS];
+    CacheService.getScriptCache().remove('sheet_data_' + SHEET_RECORDS);
+  }
+
+  return { records, names };
+}
+
+/**
+ * 管理員 API：把某個舊編號底下的服務紀錄改掛到現有的正確個案。
+ * 用於救援「以前改過編號、紀錄還留在舊編號」的歷史資料。
+ */
+function handleRelinkRecords(data) {
+  if (!checkAdminRole(data.role)) return { success: false, error: '權限不足，僅限管理員執行' };
+
+  const fromId = String(data.fromId || '').trim();
+  const toId = String(data.toId || '').trim();
+  if (!fromId || !toId) return { success: false, error: '請提供來源與目標的個案編號' };
+  if (normalizeCaseId(fromId) === normalizeCaseId(toId)) {
+    return { success: false, error: '來源與目標編號相同，不需要改掛' };
+  }
+
+  const target = getSheetData(SHEET_CASES).find(c => normalizeCaseId(c['個案編號']) === normalizeCaseId(toId));
+  if (!target) return { success: false, error: `個案檔裡找不到編號 ${toId}，請先確認目標個案存在` };
+
+  const targetId = String(target['個案編號'] || '').trim();
+  const result = renameRecordsCaseId(fromId, targetId, String(target['姓名'] || '').trim());
+  if (!result.records) {
+    return { success: false, error: `找不到個案編號為 ${fromId} 的服務紀錄，可能已經改掛過了` };
+  }
+
+  return {
+    success: true,
+    migrated: result.records,
+    message: `已將 ${result.records} 筆服務紀錄改掛到 ${targetId}（${target['姓名'] || ''}）。`
+  };
+}
+
 function getSheetData(sheetName, force = false) {
   if (!force && _sheetCache[sheetName]) return _sheetCache[sheetName];
   
@@ -957,6 +1047,9 @@ function handleRequest(e) {
         result = handleDeleteCase(data);
         break;
 
+      case 'relinkRecords':
+        result = handleRelinkRecords(data);
+        break;
       // --- 晤談紀錄 ---
       case 'getRecords':
         result = handleGetRecords(data);
@@ -1561,36 +1654,32 @@ function handleUpdateCase(data) {
   // 一次性寫回該列
   sheet.getRange(row, 1, 1, headers.length).setValues([rowDataArr]);
 
-  // --- 連動優化：批次更新晤談紀錄 ---
+  // --- 連動：改編號或改姓名時，服務紀錄一起跟著改 ---
   const oldName = String(caseItem['姓名'] || '').trim();
   const newName = String(data.name || '').trim();
+  const idChanged = !!(data.id && oldCaseId !== newCaseId);
+  const nameChanged = !!(data.name && oldName !== newName);
 
-  if ((data.id && oldCaseId !== newCaseId) || (data.name && oldName !== newName)) {
-    const recordSheet = ss.getSheetByName(SHEET_RECORDS);
-    const recordValues = recordSheet.getDataRange().getValues();
-    const rHeaders = recordValues[0];
-    const caseIdIdx = rHeaders.indexOf('個案編號');
-    const studentNameIdx = rHeaders.indexOf('學生姓名');
-
-    let changed = false;
-    for (let i = 1; i < recordValues.length; i++) {
-      if (String(recordValues[i][caseIdIdx] || '').trim() === oldCaseId) {
-        if (data.id && caseIdIdx >= 0) recordValues[i][caseIdIdx] = newCaseId;
-        if (data.name && studentNameIdx >= 0) recordValues[i][studentNameIdx] = newName;
-        changed = true;
-      }
-    }
-    
-    if (changed) {
-      recordSheet.getDataRange().setValues(recordValues);
-    }
+  let renamedRecords = 0;
+  let renamedNames = 0;
+  if (idChanged || nameChanged) {
+    // 改編號時，用正規化比對把舊格式（1140118、全形數字等）的紀錄一併搬過來，
+    // 只改名時則只補姓名，不動編號。
+    const sync = renameRecordsCaseId(oldCaseId, newCaseId || oldCaseId, nameChanged ? newName : '');
+    renamedRecords = sync.records;
+    renamedNames = sync.names;
   }
 
   // 清除快取以確保下次讀取到最新資料
   CacheService.getScriptCache().remove('sheet_data_' + SHEET_CASES);
   CacheService.getScriptCache().remove('sheet_data_' + SHEET_RECORDS);
+  delete _sheetCache[SHEET_RECORDS];
 
-  return { success: true, message: '個案更新成功' };
+  let message = '個案更新成功';
+  if (renamedRecords > 0) message += `，並同步更新 ${renamedRecords} 筆服務紀錄的個案編號`;
+  if (renamedNames > 0) message += `${renamedRecords > 0 ? '、' : '，並同步更新 '}${renamedNames} 筆服務紀錄的學生姓名`;
+
+  return { success: true, message, renamedRecords, renamedNames };
 }
 
 function handleDeleteCase(data) {
@@ -1680,22 +1769,33 @@ function handleUpdateAllCaseIds(data) {
     rCaseIdIdx = rHeaders.indexOf('個案編號');
   }
   
+  // 先建立「舊編號 → 新編號」對照（以正規化鍵比對），避免逐筆改名時互相踩到
+  const idMap = {};
   let count = 0;
   for (let i = 1; i < caseValues.length; i++) {
-    const oldId = String(caseValues[i][cIdIdx]);
+    const oldId = String(caseValues[i][cIdIdx] || '').trim();
     const newId = generateSystemId(caseValues[i][cGradeIdx], caseValues[i][cClassIdx], caseValues[i][cSeatIdx]);
     
     if (oldId !== newId) {
       // 1. 更新個案表陣列
       caseValues[i][cIdIdx] = newId;
-      
-      // 2. 更新紀錄表陣列
-      for (let j = 1; j < recordValues.length; j++) {
-        if (String(recordValues[j][rCaseIdIdx]) === oldId) {
-          recordValues[j][rCaseIdIdx] = newId;
-        }
-      }
+      // 2. 建立對照表（同一舊編號只認第一次出現的）
+      const key = normalizeCaseId(oldId);
+      if (key && !idMap[key]) idMap[key] = newId;
       count++;
+    }
+  }
+
+  // 3. 服務紀錄的個案編號一次對映到新編號
+  let recCount = 0;
+  if (recordSheet && rCaseIdIdx >= 0 && Object.keys(idMap).length > 0) {
+    for (let j = 1; j < recordValues.length; j++) {
+      const currentId = recordValues[j][rCaseIdIdx];
+      const mapped = idMap[normalizeCaseId(currentId)];
+      if (mapped && String(currentId == null ? '' : currentId).trim() !== mapped) {
+        recordValues[j][rCaseIdIdx] = mapped;
+        recCount++;
+      }
     }
   }
 
@@ -1704,11 +1804,13 @@ function handleUpdateAllCaseIds(data) {
     if (recordSheet && recordValues.length > 0) {
       recordSheet.getRange(1, 1, recordValues.length, recordValues[0].length).setValues(recordValues);
     }
+    delete _sheetCache[SHEET_CASES];
+    delete _sheetCache[SHEET_RECORDS];
     CacheService.getScriptCache().remove('sheet_data_' + SHEET_CASES);
     CacheService.getScriptCache().remove('sheet_data_' + SHEET_RECORDS);
   }
 
-  return { success: true, message: `已完成 ${count} 筆個案編號轉換。` };
+  return { success: true, message: `已完成 ${count} 筆個案編號轉換，同步更新 ${recCount} 筆服務紀錄。`, caseCount: count, recordCount: recCount };
 }
 
 /**
@@ -2521,7 +2623,17 @@ function handleRepairData(data) {
   
   let repairCount = 0;
   
+  // 個案編號原始字串索引，用來避免改格式時撞到別的個案
+  const rawCaseIds = new Set();
+  casesValues.forEach((row, i) => {
+    if (i === 0) return;
+    const raw = String(row[idColIdx] || '').trim();
+    if (raw) rawCaseIds.add(raw);
+  });
+
+
   // 1. 修復個案檔：統一編號格式 (不限 repairType)
+  const caseIdMap = {};
   if (repairAll || repairType === 'invalidIds') {
   for (let i = 1; i < casesValues.length; i++) {
     let id = String(casesValues[i][idColIdx] || '').trim();
@@ -2533,17 +2645,20 @@ function handleRepairData(data) {
     // 正確格式為 XXX-XXXX
     if (/^\d{3}-\d{4}$/.test(id)) continue;
     
-    // 嘗試修復 (如果是 7 位純數字)
     if (/^\d{7}$/.test(id)) {
       const fixed = id.slice(0, 3) + '-' + id.slice(3);
+      // 新編號若已被別的個案用掉就先不動，避免兩筆個案撞號
+      if (rawCaseIds.has(fixed)) continue;
       casesSheet.getRange(i + 1, idColIdx + 1).setValue(fixed);
+      rawCaseIds.add(fixed);
+      caseIdMap[normalizeCaseId(id)] = fixed;
       repairCount++;
     }
     // 其他格式（含連字號但不符規範等）→ 不動，由人工確認
   }
   
   }  // end if invalidIds
-  
+
   // 3. 修復紀錄檔：對齊編號格式 & 校正服務對象配對邏輯
   const serviceColIdx = recordsHeaders.indexOf('服務項目');
   const targetColIdx = recordsHeaders.indexOf('對象');
@@ -2557,16 +2672,19 @@ function handleRepairData(data) {
 
     let rowChanged = false;
 
-    // A. 編號校正
+    // A. 編號校正：先套用個案改格式後的對照表，再處理其他 7 碼編號
     if (repairAll || repairType === 'invalidIds') {
-      if (!/^\d{3}-\d{4}$/.test(id)) {
-        if (/^\d{7}$/.test(id)) {
-          id = id.slice(0, 3) + '-' + id.slice(3);
-          recordsSheet.getRange(i + 1, recIdColIdx + 1).setValue(id);
-          rowChanged = true;
-        }
-        // 其他格式不強制修改，避免誤改
+      const mappedId = caseIdMap[normalizeCaseId(id)];
+      if (mappedId && mappedId !== id) {
+        id = mappedId;
+        recordsSheet.getRange(i + 1, recIdColIdx + 1).setValue(id);
+        rowChanged = true;
+      } else if (!/^\d{3}-\d{4}$/.test(id) && /^\d{7}$/.test(id)) {
+        id = id.slice(0, 3) + '-' + id.slice(3);
+        recordsSheet.getRange(i + 1, recIdColIdx + 1).setValue(id);
+        rowChanged = true;
       }
+      // 其他格式不強制修改，避免誤改
     } // end invalidIds guard
 
     // B. 服務對象邏輯校正（僅限 2026/4/1 後的紀錄）
@@ -2619,6 +2737,70 @@ function handleRepairData(data) {
   }
 
   
+  // 2. 孤兒紀錄依「學生姓名」歸位：個案改過編號、紀錄沒跟上時，用姓名找回正確編號
+  let relocated = 0;
+  let ambiguousOrphans = 0;
+  let unresolvedOrphans = 0;
+  if (repairAll || repairType === 'orphans') {
+    SpreadsheetApp.flush();
+
+    // 姓名 → 個案編號對照；同名同姓有多筆個案時不自動歸位，避免掛錯人
+    const freshCases = casesSheet.getDataRange().getValues();
+    const freshCaseNameIdx = casesHeaders.indexOf('姓名');
+    const freshCaseKeys = new Set();
+    const nameToIds = {};
+    for (let i = 1; i < freshCases.length; i++) {
+      const cid = String(freshCases[i][idColIdx] || '').trim();
+      if (!cid) continue;
+      freshCaseKeys.add(normalizeCaseId(cid));
+      const cname = freshCaseNameIdx >= 0 ? String(freshCases[i][freshCaseNameIdx] || '').trim() : '';
+      if (!cname) continue;
+      if (!nameToIds[cname]) nameToIds[cname] = [];
+      nameToIds[cname].push(cid);
+    }
+
+    const freshRecords = recordsSheet.getDataRange().getValues();
+    const recNameIdx = recordsHeaders.indexOf('學生姓名');
+    const recNoIdx = recordsHeaders.indexOf('紀錄編號');
+    const lookups = buildStudentNameLookups();
+    const changedRows = [];
+
+    for (let i = 1; i < freshRecords.length; i++) {
+      const rid = String(freshRecords[i][recIdColIdx] || '').trim();
+      if (!rid) continue;
+      if (freshCaseKeys.has(normalizeCaseId(rid))) continue; // 不是孤兒
+
+      const ownName = recNameIdx >= 0 ? String(freshRecords[i][recNameIdx] || '').trim() : '';
+      const name = ownName || resolveStudentName({
+        '紀錄編號': recNoIdx >= 0 ? freshRecords[i][recNoIdx] : '',
+        '個案編號': rid
+      }, lookups);
+
+      if (!name) { unresolvedOrphans++; continue; }
+      const hits = nameToIds[name] || [];
+      if (hits.length === 0) { unresolvedOrphans++; continue; }
+      if (hits.length > 1) { ambiguousOrphans++; continue; }
+
+      changedRows.push({
+        row: i + 1,
+        newId: hits[0],
+        name: (recNameIdx >= 0 && ownName !== name) ? name : null
+      });
+    }
+
+    changedRows.forEach(ch => {
+      recordsSheet.getRange(ch.row, recIdColIdx + 1).setValue(ch.newId);
+      if (ch.name !== null) recordsSheet.getRange(ch.row, recNameIdx + 1).setValue(ch.name);
+    });
+
+    relocated = changedRows.length;
+    repairCount += relocated;
+    if (relocated > 0) {
+      delete _sheetCache[SHEET_RECORDS];
+      CacheService.getScriptCache().remove('sheet_data_' + SHEET_RECORDS);
+    }
+  }
+
   SpreadsheetApp.flush();
   
   // 3. 清理孤兒附件 (再次掃描並直接刪除)
@@ -2659,6 +2841,13 @@ function handleRepairData(data) {
   CacheService.getScriptCache().removeAll(['sheet_data_' + SHEET_CASES, 'sheet_data_' + SHEET_RECORDS]);
 
   let msg = `修復完成！共校正了 ${repairCount} 處資料異常點。`;
+  if (relocated > 0) msg += ` 已依學生姓名把 ${relocated} 筆孤兒紀錄歸位到對應個案。`;
+  if (ambiguousOrphans > 0 || unresolvedOrphans > 0) {
+    const parts = [];
+    if (ambiguousOrphans > 0) parts.push(`${ambiguousOrphans} 筆同名同姓`);
+    if (unresolvedOrphans > 0) parts.push(`${unresolvedOrphans} 筆查無姓名`);
+    msg += ` 另有 ${parts.join('、')}，需人工確認後再改掛。`;
+  }
   if (orphanCount > 0) msg += ` 同時清理了 ${orphanCount} 個孤兒附件。`;
   return { success: true, message: msg };
 }
